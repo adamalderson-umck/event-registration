@@ -1,6 +1,7 @@
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const nodemailer = require("nodemailer");
 const {
     generateCancelToken,
@@ -18,6 +19,50 @@ exports.weeklyDigest = weeklyDigest;
 
 // Initialize Firebase Admin
 initializeApp();
+
+/**
+ * joinDemoOrg — Callable Cloud Function
+ *
+ * Lets any authenticated (non-anonymous) user add themselves to the
+ * demo organization's members array. Hardcoded to only touch "demo-org".
+ */
+exports.joinDemoOrg = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Must be signed in");
+    }
+    if (request.auth.token.firebase.sign_in_provider === "anonymous") {
+        throw new HttpsError("permission-denied", "Anonymous users cannot join organizations");
+    }
+
+    const db = getFirestore();
+    const orgRef = db.collection("organizations").doc("demo-org");
+    const orgSnap = await orgRef.get();
+
+    if (!orgSnap.exists) {
+        throw new HttpsError("not-found", "Demo organization not found. Run 'npm run seed:demo' first.");
+    }
+
+    await orgRef.update({
+        members: FieldValue.arrayUnion(request.auth.uid),
+    });
+
+    return { status: "joined", orgId: "demo-org" };
+});
+
+/**
+ * captureSignerIp — Callable Cloud Function
+ *
+ * Returns the caller's IP address for e-sign audit trail.
+ * No auth required — registrants may be anonymous.
+ */
+exports.captureSignerIp = onCall((request) => {
+    const forwarded = request.rawRequest?.headers?.["x-forwarded-for"];
+    const ip = forwarded
+        ? forwarded.split(",")[0].trim()
+        : request.rawRequest?.ip || "unknown";
+
+    return { ip };
+});
 
 // Hosting base URL (configure via Firebase env or default)
 const BASE_URL = process.env.BASE_URL || "https://event-registration-b7840.web.app";
