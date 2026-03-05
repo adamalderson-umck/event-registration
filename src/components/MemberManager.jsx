@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo } from 'react';
+import { doc, updateDoc, arrayRemove } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { useOrg } from '../context/useOrg';
 import { Users, UserPlus, Trash2, Crown, Loader2 } from 'lucide-react';
@@ -16,7 +16,7 @@ export default function MemberManager() {
     const [memberDetails, setMemberDetails] = useState([]);
 
     const isOwner = auth.currentUser?.uid === currentOrg?.ownerUid;
-    const members = currentOrg?.members || [];
+    const members = useMemo(() => currentOrg?.members || [], [currentOrg?.members]);
 
     // For now, we just show UIDs. The resolveMemberEmail Cloud Function
     // will be added in Task 11 to handle email → UID resolution.
@@ -43,11 +43,28 @@ export default function MemberManager() {
         setSuccess('');
 
         try {
-            // For now, we'll store the email as a placeholder.
-            // In Task 11, the resolveMemberEmail Cloud Function will handle
-            // looking up the Firebase UID from the email.
-            // Temporary: just show a message that the feature needs Cloud Functions
-            setError('Member invitation by email requires Cloud Functions (Task 11). For now, members must be added directly by UID.');
+            const { getFunctions, httpsCallable } = await import('firebase/functions');
+            const functions = getFunctions();
+            const resolve = httpsCallable(functions, 'resolveMemberEmail');
+
+            const result = await resolve({ orgId: currentOrg.id, email: email.trim() });
+            const { status, uid, displayName, email: pendingEmail } = result.data;
+
+            if (status === 'already_member') {
+                setError('This user is already a member');
+            } else if (status === 'added') {
+                setCurrentOrg({
+                    ...currentOrg,
+                    members: [...members, uid],
+                });
+                setSuccess(`${displayName || email} has been added!`);
+                setEmail('');
+            } else if (status === 'pending') {
+                setSuccess(`Invitation sent to ${pendingEmail}. They'll be added when they sign in.`);
+                setEmail('');
+            }
+
+            setTimeout(() => setSuccess(''), 5000);
         } catch (err) {
             setError(err.message || 'Failed to add member');
         } finally {
