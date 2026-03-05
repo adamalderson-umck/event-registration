@@ -15,6 +15,7 @@ import Button from './ui/Button';
 import Card from './ui/Card';
 import Input from './ui/Input';
 import Select from './ui/Select';
+import SignatureViewer from './SignatureViewer';
 
 export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
     const [registrations, setRegistrations] = useState([]);
@@ -122,6 +123,13 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
                             </div>
                         ))}
                     </div>
+
+                    {/* Waiver Signature */}
+                    {selectedReg.signatureRecord?.signed && (
+                        <div className="mt-4">
+                            <SignatureViewer registration={selectedReg} event={event} />
+                        </div>
+                    )}
 
                     <div className="mt-4 pt-4 border-t border-slate-200 text-xs text-slate-400 space-y-1">
                         <p>Payment: {selectedReg.paymentStatus || 'N/A'}{selectedReg.paymentMethod ? ` (${selectedReg.paymentMethod})` : ''}</p>
