@@ -1,0 +1,42 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: Check if the authenticated user is in the org's members array
+    function isOrgMember(orgId) {
+      return request.auth != null
+        && request.auth.uid in get(/databases/$(database)/documents/organizations/$(orgId)).data.members;
+    }
+
+    // Helper: Check if the authenticated user is the org owner
+    function isOrgOwner(orgId) {
+      return request.auth != null
+        && request.auth.uid == get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid;
+    }
+
+    match /organizations/{orgId} {
+      // Any authenticated user can read orgs (to find their own memberships)
+      allow read: if request.auth != null;
+
+      // Any authenticated (non-anonymous) user can create a new org
+      allow create: if request.auth != null
+        && request.auth.token.firebase.sign_in_provider != "anonymous";
+
+      // Only the org owner can update or delete the org
+      allow update, delete: if isOrgOwner(orgId);
+
+      // Events: public read, org members write
+      match /events/{event} {
+        allow read: if true;
+        allow create, update, delete: if isOrgMember(orgId);
+      }
+
+      // Registrations: public read + create, org members manage
+      match /registrations/{registration} {
+        allow read, create: if true;
+        allow update, delete: if isOrgMember(orgId);
+      }
+    }
+  }
+}
