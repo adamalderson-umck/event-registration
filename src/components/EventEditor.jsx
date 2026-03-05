@@ -6,6 +6,7 @@ import {
     CreditCard, Bell, Loader2
 } from 'lucide-react';
 import FormFieldBuilder from './FormFieldBuilder';
+import WaiverSection from './WaiverSection';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Label from './ui/Label';
@@ -39,6 +40,11 @@ export default function EventEditor({ orgId, eventId, onBack }) {
             weeklyDigest: false,
             digestDay: 'monday',
         },
+        waiver: {
+            enabled: false,
+            title: '',
+            content: '',
+        },
     });
 
     // Load existing event
@@ -70,6 +76,11 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                             perRegistration: !!data.notifications?.perRegistration,
                             weeklyDigest: !!data.notifications?.weeklyDigest,
                             digestDay: data.notifications?.digestDay || 'monday',
+                        },
+                        waiver: {
+                            enabled: !!data.waiverEnabled,
+                            title: data.waiverTitle || '',
+                            content: data.waiverContent || '',
                         },
                     });
                 }
@@ -140,6 +151,9 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                     weeklyDigest: event.notifications.weeklyDigest,
                     digestDay: event.notifications.digestDay,
                 },
+                waiverEnabled: event.waiver.enabled,
+                waiverTitle: event.waiver.enabled ? event.waiver.title.trim() : '',
+                waiverContent: event.waiver.enabled ? event.waiver.content : '',
                 updatedAt: serverTimestamp(),
             };
 
@@ -345,6 +359,12 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                     </div>
                 </div>
             </Card>
+
+            {/* Waiver / E-Sign */}
+            <WaiverSection
+                waiver={event.waiver}
+                onChange={(waiver) => handleChange('waiver', waiver)}
+            />
 
             {/* Form Field Builder */}
             <div>
