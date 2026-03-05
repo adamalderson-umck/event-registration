@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Widget Embed Example</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+            background: #f0f0f0;
+        }
+
+        h1 {
+            margin-bottom: 8px;
+        }
+
+        p {
+            color: #666;
+            margin-bottom: 32px;
+        }
+
+        .widget-container {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+    </style>
+</head>
+
+<body>
+    <h1>My Church Website</h1>
+    <p>The event registration form is embedded below:</p>
+
+    <div class="widget-container">
+        <!--
+      Embed the event registration widget.
+      Replace data-org-id and data-event-id with your actual IDs.
+      data-mode="embed" tells the widget to render in embed mode (no header/footer).
+    -->
+        <div id="root" data-mode="embed" data-org-id="YOUR_ORG_ID" data-event-id="YOUR_EVENT_ID">
+        </div>
+
+        <!-- Load the widget CSS -->
+        <link rel="stylesheet" href="/assets/events-style.css" />
+
+        <!-- Load the widget JS -->
+        <script type="module" src="/assets/events-widget.js"></script>
+    </div>
+</body>
+
+</html>
