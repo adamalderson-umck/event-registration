@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../services/firebase';
 import { Loader2, Send, CalendarDays, MapPin, Users } from 'lucide-react';
 import DynamicField from './DynamicField';
 import SuccessState from './SuccessState';
 import WaitlistNotice from './WaitlistNotice';
+import WaiverSignatureStep from './WaiverSignatureStep';
 import Button from './ui/Button';
 import Card from './ui/Card';
 
@@ -17,6 +19,14 @@ export default function EventRegistrationForm({ eventId, orgId }) {
     const [submitted, setSubmitted] = useState(false);
     const [isWaitlisted, setIsWaitlisted] = useState(false);
     const [fetchError, setFetchError] = useState('');
+    const [waiverData, setWaiverData] = useState({
+        consentToESign: false,
+        signerName: '',
+        signatureMethod: 'draw',
+        signatureData: null,
+        signatureFont: null,
+    });
+    const [waiverErrors, setWaiverErrors] = useState({});
 
     // Fetch event data
     useEffect(() => {
@@ -63,6 +73,11 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         }
     };
 
+    const findRegistrantEmail = (fields, data) => {
+        const emailField = (fields || []).find((f) => f.type === 'email');
+        return emailField ? data[emailField.id] || '' : '';
+    };
+
     const validate = () => {
         const newErrors = {};
         const fields = event?.formFields || [];
@@ -93,6 +108,24 @@ export default function EventRegistrationForm({ eventId, orgId }) {
             }
         }
 
+        // Waiver validation (only when waiver is enabled)
+        const newWaiverErrors = {};
+        if (event?.waiverEnabled) {
+            if (!waiverData.consentToESign) {
+                newErrors._waiver_consent = 'consent';
+                newWaiverErrors.consentToESign = 'You must agree to sign electronically';
+            }
+            if (!waiverData.signerName?.trim()) {
+                newErrors._waiver_name = 'name';
+                newWaiverErrors.signerName = 'Full legal name is required';
+            }
+            if (waiverData.signatureMethod === 'draw' && !waiverData.signatureData) {
+                newErrors._waiver_sig = 'signature';
+                newWaiverErrors.signature = 'Please draw your signature';
+            }
+        }
+        setWaiverErrors(newWaiverErrors);
+
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -112,6 +145,37 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 paymentMethod: null,
                 createdAt: serverTimestamp(),
             };
+
+            // Add signature record if waiver is enabled
+            if (event.waiverEnabled) {
+                let ipAddress = 'unknown';
+                try {
+                    const getIp = httpsCallable(functions, 'captureSignerIp');
+                    const ipResult = await getIp();
+                    ipAddress = ipResult.data.ip;
+                } catch (err) {
+                    console.warn('Could not capture IP:', err);
+                }
+
+                registrationData.signatureRecord = {
+                    signed: true,
+                    signedAt: serverTimestamp(),
+                    signerName: waiverData.signerName.trim(),
+                    signerEmail: findRegistrantEmail(event.formFields, formData),
+                    signatureMethod: waiverData.signatureMethod,
+                    signatureData: waiverData.signatureMethod === 'draw'
+                        ? waiverData.signatureData
+                        : null,
+                    signatureFont: waiverData.signatureMethod === 'type'
+                        ? waiverData.signatureFont
+                        : null,
+                    waiverTitle: event.waiverTitle || '',
+                    waiverContentHash: event.waiverContentHash || '',
+                    ipAddress,
+                    userAgent: navigator.userAgent,
+                    consentToESign: true,
+                };
+            }
 
             await addDoc(
                 collection(db, 'organizations', orgId, 'registrations'),
@@ -135,6 +199,14 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         setErrors({});
         setSubmitted(false);
         setIsWaitlisted(false);
+        setWaiverData({
+            consentToESign: false,
+            signerName: '',
+            signatureMethod: 'draw',
+            signatureData: null,
+            signatureFont: null,
+        });
+        setWaiverErrors({});
     };
 
     // Loading state
@@ -236,7 +308,19 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                             </p>
                         )}
 
-                        {/* Payment section placeholder — wired in Task 10 */}
+                        {/* Payment section placeholder */}
+
+                        {event.waiverEnabled && (
+                            <WaiverSignatureStep
+                                waiver={event}
+                                value={waiverData}
+                                onChange={(data) => {
+                                    setWaiverData(data);
+                                    setWaiverErrors({});
+                                }}
+                                errors={waiverErrors}
+                            />
+                        )}
 
                         <Button
                             type="submit"
