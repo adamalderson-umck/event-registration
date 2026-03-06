@@ -43,3 +43,62 @@
     display: none !important;
   }
 }
+
+/* TipTap Editor Styles */
+.tiptap.ProseMirror {
+  outline: none;
+  min-height: 120px;
+}
+
+.tiptap.ProseMirror p {
+  margin: 0.25em 0;
+}
+
+.tiptap.ProseMirror h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0.5em 0 0.25em;
+}
+
+.tiptap.ProseMirror h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0.5em 0 0.25em;
+}
+
+.tiptap.ProseMirror ul,
+.tiptap.ProseMirror ol {
+  padding-left: 1.5rem;
+  margin: 0.25em 0;
+}
+
+.tiptap.ProseMirror li {
+  margin: 0.125em 0;
+}
+
+/* Waiver content display in registration form */
+.prose h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0.5em 0 0.25em;
+}
+
+.prose h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0.5em 0 0.25em;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.5rem;
+  margin: 0.25em 0;
+}
+
+.prose li {
+  margin: 0.125em 0;
+}
+
+.prose p {
+  margin: 0.25em 0;
+}
