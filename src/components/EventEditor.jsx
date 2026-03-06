@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import FormFieldBuilder from './FormFieldBuilder';
 import WaiverSection from './WaiverSection';
+import { sha256 } from '../utils/hashContent';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Label from './ui/Label';
@@ -154,6 +155,9 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                 waiverEnabled: event.waiver.enabled,
                 waiverTitle: event.waiver.enabled ? event.waiver.title.trim() : '',
                 waiverContent: event.waiver.enabled ? event.waiver.content : '',
+                waiverContentHash: event.waiver.enabled
+                    ? await sha256(event.waiver.content)
+                    : '',
                 updatedAt: serverTimestamp(),
             };
 
