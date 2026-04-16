@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from '../services/supabase';
 import {
     Save, ArrowLeft, CalendarDays, MapPin, Users,
-    CreditCard, Bell, Loader2
+    CreditCard, Bell, Loader2, ExternalLink, Paintbrush
 } from 'lucide-react';
 import FormFieldBuilder from './FormFieldBuilder';
+import FormPreviewPane from './FormPreviewPane';
 import WaiverSection from './WaiverSection';
+import HeaderImageUpload from './HeaderImageUpload';
+import ThemePicker from './ThemePicker';
 import { sha256 } from '../utils/hashContent';
+import { useOrg } from '../context/useOrg';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Label from './ui/Label';
@@ -17,11 +20,34 @@ import Card from './ui/Card';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
+const deduplicateFieldIds = (fields) => {
+    const seen = new Set();
+    let counter = 0;
+    return fields.map(field => {
+        if (seen.has(field.id)) {
+            const newId = `field_recovered_${Date.now()}_${++counter}`;
+            seen.add(newId);
+            return { ...field, id: newId };
+        }
+        seen.add(field.id);
+        return field;
+    });
+};
+
+const SYSTEM_FIELDS = [
+    { id: 'system_first_name', type: 'text', label: 'Your First Name', required: true, system: true },
+    { id: 'system_last_name', type: 'text', label: 'Your Last Name', required: true, system: true },
+    { id: 'system_email', type: 'email', label: 'Your Email', required: true, system: true }
+];
+
 export default function EventEditor({ orgId, eventId, onBack }) {
+    const { currentOrg } = useOrg();
     const [loading, setLoading] = useState(!!eventId);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState('');
+    const [userDisplayName, setUserDisplayName] = useState('');
+    const originalOrganizers = useRef([]);
 
     const [event, setEvent] = useState({
         title: '',
@@ -29,23 +55,27 @@ export default function EventEditor({ orgId, eventId, onBack }) {
         location: '',
         startDate: '',
         endDate: '',
+        registrationCloseDate: '',
         status: 'draft',
         capacity: '',
         waitlistEnabled: false,
         paymentEnabled: false,
         paymentAmount: '',
-        formFields: [],
+        formFields: SYSTEM_FIELDS,
         notifications: {
             organizers: [''],
             perRegistration: false,
             weeklyDigest: false,
             digestDay: 'monday',
         },
+        reminderHoursBefore: '',
         waiver: {
             enabled: false,
             title: '',
             content: '',
         },
+        headerImageUrl: currentOrg?.default_header_image_url || null,
+        theme: null,
     });
 
     // Load existing event
@@ -54,22 +84,38 @@ export default function EventEditor({ orgId, eventId, onBack }) {
 
         const fetchEvent = async () => {
             try {
-                const eventRef = doc(db, 'organizations', orgId, 'events', eventId);
-                const snap = await getDoc(eventRef);
-                if (snap.exists()) {
-                    const data = snap.data();
+                const { data, error: fetchErr } = await supabase
+                    .from('events')
+                    .select('*')
+                    .eq('id', eventId)
+                    .single();
+
+                if (fetchErr) throw fetchErr;
+
+                if (data) {
+                    let loadedFields = deduplicateFieldIds(data.form_fields || []);
+                    
+                    // Inject system fields if missing
+                    const missingSystemFields = SYSTEM_FIELDS.filter(
+                        sf => !loadedFields.some(lf => lf.id === sf.id)
+                    );
+                    if (missingSystemFields.length > 0) {
+                        loadedFields = [...missingSystemFields, ...loadedFields];
+                    }
+
                     setEvent({
                         title: data.title || '',
                         description: data.description || '',
                         location: data.location || '',
-                        startDate: data.startDate || '',
-                        endDate: data.endDate || '',
+                        startDate: data.start_date ? data.start_date.slice(0, 16) : '',
+                        endDate: data.end_date ? data.end_date.slice(0, 16) : '',
+                        registrationCloseDate: data.registration_close_date ? data.registration_close_date.slice(0, 16) : '',
                         status: data.status || 'draft',
                         capacity: data.capacity != null ? String(data.capacity) : '',
-                        waitlistEnabled: !!data.waitlistEnabled,
-                        paymentEnabled: !!data.paymentEnabled,
-                        paymentAmount: data.paymentAmount != null ? String(data.paymentAmount) : '',
-                        formFields: data.formFields || [],
+                        waitlistEnabled: !!data.waitlist_enabled,
+                        paymentEnabled: !!data.payment_enabled,
+                        paymentAmount: data.payment_amount != null ? String(data.payment_amount) : '',
+                        formFields: loadedFields,
                         notifications: {
                             organizers: data.notifications?.organizers?.length > 0
                                 ? data.notifications.organizers
@@ -78,12 +124,17 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                             weeklyDigest: !!data.notifications?.weeklyDigest,
                             digestDay: data.notifications?.digestDay || 'monday',
                         },
+                        reminderHoursBefore: data.reminder_hours_before != null ? String(data.reminder_hours_before) : '',
                         waiver: {
-                            enabled: !!data.waiverEnabled,
-                            title: data.waiverTitle || '',
-                            content: data.waiverContent || '',
+                            enabled: !!data.waiver_enabled,
+                            title: data.waiver_title || '',
+                            content: data.waiver_content || '',
                         },
+                        headerImageUrl: data.header_image_url || null,
+                        theme: data.theme || null,
                     });
+                    // Store original organizer emails for diffing on save
+                    originalOrganizers.current = data.notifications?.organizers?.filter(e => e.trim() !== '') || [];
                 }
             } catch (err) {
                 console.error('Error loading event:', err);
@@ -95,6 +146,23 @@ export default function EventEditor({ orgId, eventId, onBack }) {
 
         fetchEvent();
     }, [eventId, orgId]);
+
+    // Fetch current user's display name for organizer invites
+    useEffect(() => {
+        const fetchProfile = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('display_name')
+                .eq('id', user.id)
+                .single();
+            if (profile?.display_name) {
+                setUserDisplayName(profile.display_name);
+            }
+        };
+        fetchProfile();
+    }, []);
 
     const handleChange = (key, value) => {
         setEvent((prev) => ({ ...prev, [key]: value }));
@@ -138,43 +206,78 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                 title: event.title.trim(),
                 description: event.description.trim(),
                 location: event.location.trim(),
-                startDate: event.startDate,
-                endDate: event.endDate,
+                start_date: event.startDate || null,
+                end_date: event.endDate || null,
+                registration_close_date: event.registrationCloseDate || null,
                 status: event.status,
                 capacity: event.capacity ? parseInt(event.capacity) : null,
-                waitlistEnabled: event.waitlistEnabled,
-                paymentEnabled: event.paymentEnabled,
-                paymentAmount: event.paymentAmount ? parseFloat(event.paymentAmount) : null,
-                formFields: event.formFields,
+                waitlist_enabled: event.waitlistEnabled,
+                payment_enabled: event.paymentEnabled,
+                payment_amount: event.paymentAmount ? parseFloat(event.paymentAmount) : null,
+                form_fields: event.formFields,
                 notifications: {
                     organizers: event.notifications.organizers.filter((e) => e.trim() !== ''),
                     perRegistration: event.notifications.perRegistration,
                     weeklyDigest: event.notifications.weeklyDigest,
                     digestDay: event.notifications.digestDay,
                 },
-                waiverEnabled: event.waiver.enabled,
-                waiverTitle: event.waiver.enabled ? event.waiver.title.trim() : '',
-                waiverContent: event.waiver.enabled ? event.waiver.content : '',
-                waiverContentHash: event.waiver.enabled
+                reminder_hours_before: event.reminderHoursBefore ? parseInt(event.reminderHoursBefore) : null,
+                waiver_enabled: event.waiver.enabled,
+                waiver_title: event.waiver.enabled ? event.waiver.title.trim() : '',
+                waiver_content: event.waiver.enabled ? event.waiver.content : '',
+                waiver_content_hash: event.waiver.enabled
                     ? await sha256(event.waiver.content)
                     : '',
-                updatedAt: serverTimestamp(),
+                header_image_url: event.headerImageUrl,
+                theme: event.theme,
+                org_id: orgId,
             };
 
             if (eventId) {
                 // Update existing
-                const eventRef = doc(db, 'organizations', orgId, 'events', eventId);
-                await setDoc(eventRef, eventData, { merge: true });
+                const { error: updateErr } = await supabase
+                    .from('events')
+                    .update(eventData)
+                    .eq('id', eventId);
+
+                if (updateErr) throw updateErr;
             } else {
                 // Create new
-                eventData.registrationCount = 0;
-                eventData.waitlistCount = 0;
-                eventData.createdAt = serverTimestamp();
-                await addDoc(collection(db, 'organizations', orgId, 'events'), eventData);
+                eventData.registration_count = 0;
+                eventData.waitlist_count = 0;
+                const { error: insertErr } = await supabase
+                    .from('events')
+                    .insert(eventData);
+
+                if (insertErr) throw insertErr;
             }
 
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
+
+            // Send organizer invite emails for newly added emails
+            const newOrganizers = eventData.notifications.organizers.filter(
+                (email) => email && !originalOrganizers.current.includes(email)
+            );
+
+            if (newOrganizers.length > 0) {
+                for (const email of newOrganizers) {
+                    try {
+                        await supabase.functions.invoke('send-organizer-invite', {
+                            body: {
+                                eventTitle: eventData.title,
+                                addedByName: userDisplayName || 'An administrator',
+                                recipientEmail: email,
+                                orgId,
+                            },
+                        });
+                    } catch (inviteErr) {
+                        console.warn(`Failed to send organizer invite to ${email}:`, inviteErr);
+                    }
+                }
+                // Update the baseline so re-saves don't re-send
+                originalOrganizers.current = eventData.notifications.organizers;
+            }
         } catch (err) {
             console.error('Error saving event:', err);
             setError(err.message || 'Failed to save event');
@@ -205,6 +308,18 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                 </div>
                 <div className="flex items-center gap-3">
                     {saved && <span className="text-sm text-success font-medium">✓ Saved</span>}
+                    {eventId && (
+                        <Button
+                            variant="secondary"
+                            onClick={() => window.open(`${window.location.origin}/?org=${orgId}&event=${eventId}`, '_blank')}
+                            type="button"
+                        >
+                            <ExternalLink className="w-4 h-4" /> Preview
+                        </Button>
+                    )}
+                    <Button variant="ghost" onClick={onBack} type="button">
+                        Cancel
+                    </Button>
                     <Button onClick={handleSave} loading={saving} type="button">
                         <Save className="w-4 h-4" /> Save Event
                     </Button>
@@ -239,10 +354,11 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <Label htmlFor="event-location">
-                                <MapPin className="w-3 h-3 inline mr-1" />Location
+                            <Label htmlFor="event-location" className="whitespace-nowrap">
+                                <MapPin className="w-3 h-3 inline mr-1" />Location / Address
                             </Label>
-                            <Input id="event-location" value={event.location} onChange={(e) => handleChange('location', e.target.value)} placeholder="Fellowship Hall" />
+                            <p className="text-xs text-slate-400 mb-1">Used for calendar links</p>
+                            <Input id="event-location" value={event.location} onChange={(e) => handleChange('location', e.target.value)} placeholder="1435 E Main St, Kent, OH 44240" />
                         </div>
                         <div>
                             <Label htmlFor="event-status">Status</Label>
@@ -258,7 +374,7 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                             />
                         </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                         <div>
                             <Label htmlFor="event-start">Start Date</Label>
                             <Input id="event-start" type="datetime-local" value={event.startDate} onChange={(e) => handleChange('startDate', e.target.value)} />
@@ -267,6 +383,39 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                             <Label htmlFor="event-end">End Date</Label>
                             <Input id="event-end" type="datetime-local" value={event.endDate} onChange={(e) => handleChange('endDate', e.target.value)} />
                         </div>
+                        <div>
+                            <Label htmlFor="event-close">Registration Closes</Label>
+                            <Input id="event-close" type="datetime-local" value={event.registrationCloseDate} onChange={(e) => handleChange('registrationCloseDate', e.target.value)} />
+                            <p className="text-xs text-slate-400 mt-1">Leave empty for manual control</p>
+                        </div>
+                    </div>
+                </div>
+            </Card>
+
+            {/* Appearance */}
+            <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                    <Paintbrush className="w-5 h-5 text-primary" />
+                    Appearance
+                </h3>
+                <div className="space-y-6">
+                    <div>
+                        <Label>Header Image</Label>
+                        <p className="text-xs text-slate-400 mb-2">Displayed at the top of the public registration form. 16:9 aspect ratio recommended.</p>
+                        <HeaderImageUpload
+                            imageUrl={event.headerImageUrl}
+                            orgId={orgId}
+                            eventId={eventId || 'new'}
+                            onChange={(url) => handleChange('headerImageUrl', url)}
+                        />
+                    </div>
+                    <div>
+                        <Label>Theme Colors</Label>
+                        <p className="text-xs text-slate-400 mb-2">Applied to the registration form header, buttons, and accents.</p>
+                        <ThemePicker
+                            theme={event.theme}
+                            onChange={(theme) => handleChange('theme', theme)}
+                        />
                     </div>
                 </div>
             </Card>
@@ -360,6 +509,19 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                                 />
                             )}
                         </div>
+                        <div className="flex items-center gap-3 mt-2">
+                            <Label htmlFor="reminder-hours" className="whitespace-nowrap text-sm">Send reminder</Label>
+                            <Input
+                                id="reminder-hours"
+                                type="number"
+                                min="1"
+                                value={event.reminderHoursBefore}
+                                onChange={(e) => handleChange('reminderHoursBefore', e.target.value)}
+                                placeholder="e.g. 24"
+                                className="w-24"
+                            />
+                            <span className="text-sm text-slate-500">hours before event</span>
+                        </div>
                     </div>
                 </div>
             </Card>
@@ -377,6 +539,12 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                     fields={event.formFields}
                     onChange={(fields) => handleChange('formFields', fields)}
                 />
+            </div>
+
+            {/* Live Preview */}
+            <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Live Preview</h3>
+                <FormPreviewPane eventState={event} />
             </div>
         </div>
     );

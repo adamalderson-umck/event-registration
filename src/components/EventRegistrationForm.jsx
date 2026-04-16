@@ -1,14 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { doc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../services/firebase';
-import { Loader2, Send, CalendarDays, MapPin, Users } from 'lucide-react';
-import DynamicField from './DynamicField';
+import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from '../services/supabase';
+import { Loader2 } from 'lucide-react';
 import SuccessState from './SuccessState';
 import WaitlistNotice from './WaitlistNotice';
 import WaiverSignatureStep from './WaiverSignatureStep';
-import Button from './ui/Button';
+import FormPreview from './FormPreview';
 import Card from './ui/Card';
+import { evaluateCondition, splitIntoPages } from '../utils/formConditions';
 
 export default function EventRegistrationForm({ eventId, orgId }) {
     const [event, setEvent] = useState(null);
@@ -19,6 +17,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
     const [submitted, setSubmitted] = useState(false);
     const [isWaitlisted, setIsWaitlisted] = useState(false);
     const [fetchError, setFetchError] = useState('');
+    const [currentPage, setCurrentPage] = useState(0);
     const [waiverData, setWaiverData] = useState({
         consentToESign: false,
         signerName: '',
@@ -28,28 +27,39 @@ export default function EventRegistrationForm({ eventId, orgId }) {
     });
     const [waiverErrors, setWaiverErrors] = useState({});
 
+    // Prevents accidental form submit when Next→Submit buttons swap at the same DOM position
+    const justNavigated = useRef(false);
+
     // Fetch event data
     useEffect(() => {
         const fetchEvent = async () => {
             try {
-                const eventRef = doc(db, 'organizations', orgId, 'events', eventId);
-                const eventSnap = await getDoc(eventRef);
+                const { data, error } = await supabase
+                    .from('events')
+                    .select('*')
+                    .eq('id', eventId)
+                    .eq('org_id', orgId)
+                    .single();
 
-                if (!eventSnap.exists()) {
+                if (error || !data) {
                     setFetchError('Event not found');
                     setLoading(false);
                     return;
                 }
 
-                const eventData = { id: eventSnap.id, ...eventSnap.data() };
-
-                if (eventData.status !== 'active') {
+                if (data.status !== 'active') {
                     setFetchError('This event is no longer accepting registrations');
                     setLoading(false);
                     return;
                 }
 
-                setEvent(eventData);
+                if (data.registration_close_date && new Date(data.registration_close_date) < new Date()) {
+                    setFetchError('Registration for this event has closed');
+                    setLoading(false);
+                    return;
+                }
+
+                setEvent(data);
             } catch (err) {
                 console.error('Error fetching event:', err);
                 setFetchError('Failed to load event');
@@ -60,6 +70,16 @@ export default function EventRegistrationForm({ eventId, orgId }) {
 
         if (eventId && orgId) fetchEvent();
     }, [eventId, orgId]);
+
+    // --- Multi-page and condition helpers ---
+    const pages = event ? splitIntoPages(event.form_fields || []) : [];
+
+    const getVisibleFields = (fieldsToCheck) =>
+        fieldsToCheck.filter((f) => evaluateCondition(f.condition, formData));
+
+    const currentPageFields = pages[currentPage]?.fields || [];
+    const visibleCurrentPageFields = getVisibleFields(currentPageFields);
+    const allVisibleFields = pages.flatMap((p) => getVisibleFields(p.fields));
 
     const handleFieldChange = (fieldId, value) => {
         setFormData((prev) => ({ ...prev, [fieldId]: value }));
@@ -74,13 +94,13 @@ export default function EventRegistrationForm({ eventId, orgId }) {
     };
 
     const findRegistrantEmail = (fields, data) => {
-        const emailField = (fields || []).find((f) => f.type === 'email');
+        const emailField = (fields || []).find((f) => f.id === 'system_email') || (fields || []).find((f) => f.type === 'email');
         return emailField ? data[emailField.id] || '' : '';
     };
 
-    const validate = () => {
+    const validate = (fieldsToValidate = null) => {
         const newErrors = {};
-        const fields = event?.formFields || [];
+        const fields = fieldsToValidate || allVisibleFields;
 
         for (const field of fields) {
             if (!field.required) continue;
@@ -106,11 +126,19 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                     newErrors[field.id] = 'Please enter a valid email address';
                 }
             }
+
+            // Phone format validation
+            if (field.type === 'phone' && value && typeof value === 'string') {
+                const digits = value.replace(/\D/g, '');
+                if (digits.length > 0 && digits.length < 10) {
+                    newErrors[field.id] = 'Please enter a valid 10-digit phone number';
+                }
+            }
         }
 
-        // Waiver validation (only when waiver is enabled)
+        // Waiver validation — only on final submit (fieldsToValidate is null)
         const newWaiverErrors = {};
-        if (event?.waiverEnabled) {
+        if (!fieldsToValidate && event?.waiver_enabled) {
             if (!waiverData.consentToESign) {
                 newErrors._waiver_consent = 'consent';
                 newWaiverErrors.consentToESign = 'You must agree to sign electronically';
@@ -124,44 +152,94 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 newWaiverErrors.signature = 'Please draw your signature';
             }
         }
-        setWaiverErrors(newWaiverErrors);
+        setWaiverErrors(fieldsToValidate ? {} : newWaiverErrors);
 
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
 
+    // --- Page navigation ---
+    const handleNext = () => {
+        if (!validate(visibleCurrentPageFields)) return;
+
+        // Clear any stale errors before showing the next page
+        setErrors({});
+        setWaiverErrors({});
+
+        // Guard against accidental submit from Next→Submit button swap at same DOM position
+        justNavigated.current = true;
+
+        // Find the next page with visible fields (skip all-hidden pages)
+        let nextPage = currentPage + 1;
+        while (nextPage < pages.length - 1) {
+            const visibleFields = getVisibleFields(pages[nextPage].fields);
+            if (visibleFields.length > 0) break;
+            nextPage++;
+        }
+        setCurrentPage(nextPage);
+    };
+
+    const handleBack = () => {
+        // Clear errors when going back so the previous page starts clean
+        setErrors({});
+        setWaiverErrors({});
+
+        let prevPage = currentPage - 1;
+        while (prevPage > 0) {
+            const visibleFields = getVisibleFields(pages[prevPage].fields);
+            if (visibleFields.length > 0) break;
+            prevPage--;
+        }
+        setCurrentPage(Math.max(0, prevPage));
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
+        // Reject submit that fired because the Submit button appeared at the same
+        // DOM position as the Next button the user just clicked (double-click race)
+        if (justNavigated.current) {
+            justNavigated.current = false;
+            return;
+        }
         if (!validate()) return;
 
         setSubmitting(true);
 
         try {
+            // Build clean form_data from visible fields only
+            const cleanFormData = {};
+            for (const field of allVisibleFields) {
+                if (formData[field.id] !== undefined) {
+                    cleanFormData[field.id] = formData[field.id];
+                }
+            }
+
             const registrationData = {
-                eventId,
-                formData,
-                status: 'pending', // Cloud Function will set to confirmed/waitlisted
-                paymentStatus: event.paymentEnabled ? 'pending' : 'not_required',
-                paymentMethod: null,
-                createdAt: serverTimestamp(),
+                event_id: eventId,
+                org_id: orgId,
+                form_data: cleanFormData,
+                status: 'pending', // Trigger will set to confirmed/waitlisted
+                payment_status: event.payment_enabled ? 'pending' : 'not_required',
+                payment_method: null,
             };
 
             // Add signature record if waiver is enabled
-            if (event.waiverEnabled) {
+            if (event.waiver_enabled) {
                 let ipAddress = 'unknown';
                 try {
-                    const getIp = httpsCallable(functions, 'captureSignerIp');
-                    const ipResult = await getIp();
-                    ipAddress = ipResult.data.ip;
+                    const response = await supabase.functions.invoke('capture-signer-ip');
+                    if (response.data?.ip) {
+                        ipAddress = response.data.ip;
+                    }
                 } catch (err) {
                     console.warn('Could not capture IP:', err);
                 }
 
-                registrationData.signatureRecord = {
+                registrationData.signature_record = {
                     signed: true,
-                    signedAt: serverTimestamp(),
+                    signedAt: new Date().toISOString(),
                     signerName: waiverData.signerName.trim(),
-                    signerEmail: findRegistrantEmail(event.formFields, formData),
+                    signerEmail: findRegistrantEmail(event.form_fields, formData),
                     signatureMethod: waiverData.signatureMethod,
                     signatureData: waiverData.signatureMethod === 'draw'
                         ? waiverData.signatureData
@@ -169,22 +247,23 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                     signatureFont: waiverData.signatureMethod === 'type'
                         ? waiverData.signatureFont
                         : null,
-                    waiverTitle: event.waiverTitle || '',
-                    waiverContentHash: event.waiverContentHash || '',
+                    waiverTitle: event.waiver_title || '',
+                    waiverContentHash: event.waiver_content_hash || '',
                     ipAddress,
                     userAgent: navigator.userAgent,
                     consentToESign: true,
                 };
             }
 
-            await addDoc(
-                collection(db, 'organizations', orgId, 'registrations'),
-                registrationData
-            );
+            const { error: insertError } = await supabase
+                .from('registrations')
+                .insert(registrationData);
+
+            if (insertError) throw insertError;
 
             // Determine if waitlisted for UI display
-            const isFull = event.capacity && event.registrationCount >= event.capacity;
-            setIsWaitlisted(isFull && event.waitlistEnabled);
+            const isFull = event.capacity && event.registration_count >= event.capacity;
+            setIsWaitlisted(isFull && event.waitlist_enabled);
             setSubmitted(true);
         } catch (err) {
             console.error('Error submitting registration:', err);
@@ -199,6 +278,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         setErrors({});
         setSubmitted(false);
         setIsWaitlisted(false);
+        setCurrentPage(0);
         setWaiverData({
             consentToESign: false,
             signerName: '',
@@ -232,85 +312,47 @@ export default function EventRegistrationForm({ eventId, orgId }) {
     if (submitted) {
         return (
             <SuccessState
-                eventTitle={event?.title}
+                event={event}
                 isWaitlisted={isWaitlisted}
                 onReset={handleReset}
             />
         );
     }
 
-    const isFull = event.capacity && event.registrationCount >= event.capacity;
-    const isClosed = isFull && !event.waitlistEnabled;
-    const spotsLeft = event.capacity ? event.capacity - (event.registrationCount || 0) : null;
+    const isFull = event.capacity && event.registration_count >= event.capacity;
+    const isClosed = isFull && !event.waitlist_enabled;
+
+    // Closed state
+    if (isClosed) {
+        return (
+            <Card className="max-w-2xl mx-auto p-8 text-center">
+                <p className="text-lg font-semibold text-slate-700">Registration is Full</p>
+                <p className="text-slate-500 text-sm mt-1">This event has reached capacity and is no longer accepting registrations.</p>
+            </Card>
+        );
+    }
 
     return (
-        <Card className="max-w-2xl mx-auto overflow-hidden">
-            {/* Event Header */}
-            <div className="bg-gradient-to-r from-primary to-accent px-6 py-8 text-white">
-                <h1 className="text-2xl font-bold mb-2">{event.title}</h1>
-                {event.description && (
-                    <p className="text-white/80 text-sm mb-4">{event.description}</p>
-                )}
-                <div className="flex flex-wrap gap-4 text-sm text-white/70">
-                    {event.startDate && (
-                        <span className="flex items-center gap-1">
-                            <CalendarDays className="w-4 h-4" />
-                            {new Date(event.startDate).toLocaleDateString('en-US', {
-                                weekday: 'short',
-                                year: 'numeric',
-                                month: 'long',
-                                day: 'numeric',
-                            })}
-                        </span>
-                    )}
-                    {event.location && (
-                        <span className="flex items-center gap-1">
-                            <MapPin className="w-4 h-4" />
-                            {event.location}
-                        </span>
-                    )}
-                    {spotsLeft !== null && spotsLeft > 0 && (
-                        <span className="flex items-center gap-1">
-                            <Users className="w-4 h-4" />
-                            {spotsLeft} {spotsLeft === 1 ? 'spot' : 'spots'} remaining
-                        </span>
-                    )}
-                </div>
-            </div>
-
-            {/* Form Content */}
-            <div className="p-6">
-                {isClosed ? (
-                    <div className="text-center py-8">
-                        <Users className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                        <p className="text-lg font-semibold text-slate-700">Registration is Full</p>
-                        <p className="text-slate-500 text-sm mt-1">This event has reached capacity and is no longer accepting registrations.</p>
-                    </div>
-                ) : (
-                    <form onSubmit={handleSubmit} className="space-y-5">
-                        {isFull && event.waitlistEnabled && (
-                            <WaitlistNotice waitlistCount={event.waitlistCount || 0} />
-                        )}
-
-                        {(event.formFields || []).map((field) => (
-                            <DynamicField
-                                key={field.id}
-                                field={field}
-                                value={formData[field.id]}
-                                onChange={handleFieldChange}
-                                error={errors[field.id]}
-                            />
-                        ))}
-
-                        {errors._form && (
-                            <p className="text-sm text-danger bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                                {errors._form}
-                            </p>
-                        )}
-
-                        {/* Payment section placeholder */}
-
-                        {event.waiverEnabled && (
+        <div className="max-w-2xl mx-auto">
+            <FormPreview
+                event={event}
+                formData={formData}
+                currentPage={currentPage}
+                readOnly={false}
+                errors={errors}
+                onFieldChange={handleFieldChange}
+                onNext={handleNext}
+                onBack={handleBack}
+                onSubmit={handleSubmit}
+                submitting={submitting}
+                beforeFields={
+                    isFull && event.waitlist_enabled
+                        ? <WaitlistNotice waitlistCount={event.waitlist_count || 0} />
+                        : null
+                }
+                waiverSlot={
+                    event.waiver_enabled
+                        ? (
                             <WaiverSignatureStep
                                 waiver={event}
                                 value={waiverData}
@@ -320,20 +362,10 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                                 }}
                                 errors={waiverErrors}
                             />
-                        )}
-
-                        <Button
-                            type="submit"
-                            loading={submitting}
-                            className="w-full"
-                            size="lg"
-                        >
-                            <Send className="w-4 h-4" />
-                            {isFull && event.waitlistEnabled ? 'Join Waitlist' : 'Submit Registration'}
-                        </Button>
-                    </form>
-                )}
-            </div>
-        </Card>
+                        )
+                        : null
+                }
+            />
+        </div>
     );
 }
