@@ -12,8 +12,8 @@ export const US_STATES = [
     'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
 ];
 
-let _templateCounter = 100;
-const nextId = () => `tmpl_${++_templateCounter}`;
+let _templateCounter = 0;
+const nextId = () => `tmpl_${Date.now()}_${++_templateCounter}`;
 
 export const templateGroups = [
     {
@@ -58,6 +58,7 @@ export const fieldTypeOptions = [
     { value: 'checkbox', label: 'Checkbox' },
     { value: 'checkboxGroup', label: 'Checkbox Group' },
     { value: 'radio', label: 'Radio Buttons' },
+    { value: 'sectionBreak', label: 'Section Break' },
 ];
 
 export const needsOptions = (type) =>

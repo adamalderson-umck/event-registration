@@ -8,7 +8,7 @@ import Checkbox from './ui/Checkbox';
  * DynamicField renders a single form field based on its schema configuration.
  * Supports: text, email, phone, number, textarea, select, checkbox, checkboxGroup, radio, date
  */
-export default function DynamicField({ field, value, onChange, error }) {
+export default function DynamicField({ field, value, onChange, error, disabled = false }) {
     const { id, type, label, required, placeholder, options = [] } = field;
 
     const handleChange = (newValue) => {
@@ -20,17 +20,26 @@ export default function DynamicField({ field, value, onChange, error }) {
             case 'text':
             case 'email':
             case 'phone':
-            case 'number':
+            case 'number': {
+                const handlePhoneChange = (v) => {
+                    const digits = v.replace(/\D/g, '');
+                    if (digits.length <= 3) return handleChange(digits);
+                    if (digits.length <= 6) return handleChange(`(${digits.slice(0, 3)}) ${digits.slice(3)}`);
+                    return handleChange(`(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`);
+                };
+
                 return (
                     <Input
                         id={`field-${id}`}
                         type={type === 'phone' ? 'tel' : type}
                         value={value || ''}
-                        onChange={(e) => handleChange(e.target.value)}
-                        placeholder={placeholder}
+                        onChange={(e) => type === 'phone' ? handlePhoneChange(e.target.value) : handleChange(e.target.value)}
+                        placeholder={type === 'phone' && !placeholder ? '(555) 555-5555' : placeholder}
                         error={error}
+                        disabled={disabled}
                     />
                 );
+            }
 
             case 'date':
                 return (
@@ -40,6 +49,7 @@ export default function DynamicField({ field, value, onChange, error }) {
                         value={value || ''}
                         onChange={(e) => handleChange(e.target.value)}
                         error={error}
+                        disabled={disabled}
                     />
                 );
 
@@ -51,6 +61,7 @@ export default function DynamicField({ field, value, onChange, error }) {
                         onChange={(e) => handleChange(e.target.value)}
                         placeholder={placeholder}
                         rows={3}
+                        disabled={disabled}
                         className={`
               w-full px-3 py-2 border rounded-lg
               text-slate-900 placeholder-slate-400
@@ -58,6 +69,7 @@ export default function DynamicField({ field, value, onChange, error }) {
               focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary
               resize-y
               ${error ? 'border-danger ring-1 ring-danger/30' : 'border-slate-300'}
+              ${disabled ? 'opacity-60 cursor-not-allowed bg-slate-50' : ''}
             `}
                     />
                 );
@@ -71,6 +83,7 @@ export default function DynamicField({ field, value, onChange, error }) {
                         options={options}
                         placeholder={`Select ${label}`}
                         error={error}
+                        disabled={disabled}
                     />
                 );
 
@@ -81,12 +94,13 @@ export default function DynamicField({ field, value, onChange, error }) {
                         checked={!!value}
                         onChange={(e) => handleChange(e.target.checked)}
                         label={label}
+                        disabled={disabled}
                     />
                 );
 
             case 'checkboxGroup':
                 return (
-                    <div className="space-y-2">
+                    <div className="flex flex-wrap gap-x-6 gap-y-3">
                         {options.map((opt) => {
                             const optValue = typeof opt === 'string' ? opt : opt.value;
                             const optLabel = typeof opt === 'string' ? opt : opt.label;
@@ -102,6 +116,8 @@ export default function DynamicField({ field, value, onChange, error }) {
                                         handleChange(newValues);
                                     }}
                                     label={optLabel}
+                                    disabled={disabled}
+                                    className={disabled ? 'opacity-60' : ''}
                                 />
                             );
                         })}
@@ -110,19 +126,20 @@ export default function DynamicField({ field, value, onChange, error }) {
 
             case 'radio':
                 return (
-                    <div className="space-y-2">
+                    <div className="flex flex-wrap gap-x-6 gap-y-3">
                         {options.map((opt) => {
                             const optValue = typeof opt === 'string' ? opt : opt.value;
                             const optLabel = typeof opt === 'string' ? opt : opt.label;
                             return (
-                                <label key={optValue} className="inline-flex items-center gap-2 cursor-pointer mr-4">
+                                <label key={optValue} className={`inline-flex items-center gap-2 ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
                                     <input
                                         type="radio"
                                         name={`field-${id}`}
                                         value={optValue}
                                         checked={value === optValue}
                                         onChange={(e) => handleChange(e.target.value)}
-                                        className="w-4 h-4 text-primary border-slate-300 focus:ring-primary/50 cursor-pointer"
+                                        disabled={disabled}
+                                        className={`w-4 h-4 text-primary border-slate-300 focus:ring-primary/50 ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                                     />
                                     <span className="text-sm text-slate-700">{optLabel}</span>
                                 </label>
