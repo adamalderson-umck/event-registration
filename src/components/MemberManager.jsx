@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { doc, updateDoc, arrayRemove } from 'firebase/firestore';
-import { db, auth } from '../services/firebase';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../services/supabase';
 import { useOrg } from '../context/useOrg';
 import { Users, UserPlus, Trash2, Crown, Loader2 } from 'lucide-react';
 import Button from './ui/Button';
@@ -8,27 +7,41 @@ import Input from './ui/Input';
 import Card from './ui/Card';
 
 export default function MemberManager() {
-    const { currentOrg, setCurrentOrg } = useOrg();
+    const { currentOrg } = useOrg();
     const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
-    const [memberDetails, setMemberDetails] = useState([]);
+    const [members, setMembers] = useState([]);
+    const [currentUserId, setCurrentUserId] = useState(null);
 
-    const isOwner = auth.currentUser?.uid === currentOrg?.ownerUid;
-    const members = useMemo(() => currentOrg?.members || [], [currentOrg?.members]);
+    const isOwner = currentUserId === currentOrg?.owner_uid;
 
-    // For now, we just show UIDs. The resolveMemberEmail Cloud Function
-    // will be added in Task 11 to handle email → UID resolution.
+    // Fetch members and current user
     useEffect(() => {
-        setMemberDetails(
-            members.map((uid) => ({
-                uid,
-                isOwner: uid === currentOrg?.ownerUid,
-                isSelf: uid === auth.currentUser?.uid,
-            }))
-        );
-    }, [members, currentOrg?.ownerUid]);
+        const fetchData = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) setCurrentUserId(user.id);
+
+            if (!currentOrg?.id) return;
+
+            const { data, error } = await supabase
+                .from('org_members')
+                .select('user_id, role')
+                .eq('org_id', currentOrg.id);
+
+            if (!error && data) {
+                setMembers(data.map((m) => ({
+                    userId: m.user_id,
+                    role: m.role,
+                    isOwner: m.role === 'owner',
+                    isSelf: m.user_id === user?.id,
+                })));
+            }
+        };
+
+        fetchData();
+    }, [currentOrg?.id, currentOrg?.owner_uid]);
 
     const handleAddMember = async (e) => {
         e.preventDefault();
@@ -43,24 +56,36 @@ export default function MemberManager() {
         setSuccess('');
 
         try {
-            const { getFunctions, httpsCallable } = await import('firebase/functions');
-            const functions = getFunctions();
-            const resolve = httpsCallable(functions, 'resolveMemberEmail');
+            const { data, error: rpcErr } = await supabase.functions.invoke('resolve-member-email', {
+                body: { orgId: currentOrg.id, email: email.trim() },
+            });
 
-            const result = await resolve({ orgId: currentOrg.id, email: email.trim() });
-            const { status, uid, displayName, email: pendingEmail } = result.data;
+            if (rpcErr) throw rpcErr;
+
+            const { status, displayName } = data || {};
 
             if (status === 'already_member') {
                 setError('This user is already a member');
             } else if (status === 'added') {
-                setCurrentOrg({
-                    ...currentOrg,
-                    members: [...members, uid],
-                });
+                // Re-fetch members
+                const { data: memberData } = await supabase
+                    .from('org_members')
+                    .select('user_id, role')
+                    .eq('org_id', currentOrg.id);
+
+                if (memberData) {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    setMembers(memberData.map((m) => ({
+                        userId: m.user_id,
+                        role: m.role,
+                        isOwner: m.role === 'owner',
+                        isSelf: m.user_id === user?.id,
+                    })));
+                }
                 setSuccess(`${displayName || email} has been added!`);
                 setEmail('');
             } else if (status === 'pending') {
-                setSuccess(`Invitation sent to ${pendingEmail}. They'll be added when they sign in.`);
+                setSuccess(`Invitation sent to ${email}. They'll be added when they sign in.`);
                 setEmail('');
             }
 
@@ -72,22 +97,26 @@ export default function MemberManager() {
         }
     };
 
-    const handleRemoveMember = async (uid) => {
+    const handleRemoveMember = async (userId) => {
         if (!isOwner) return;
-        if (uid === currentOrg.ownerUid) {
+
+        // Find the member to check role
+        const member = members.find((m) => m.userId === userId);
+        if (member?.isOwner) {
             setError("Can't remove the organization owner");
             return;
         }
 
         try {
-            const orgRef = doc(db, 'organizations', currentOrg.id);
-            await updateDoc(orgRef, {
-                members: arrayRemove(uid),
-            });
-            setCurrentOrg({
-                ...currentOrg,
-                members: members.filter((m) => m !== uid),
-            });
+            const { error: deleteErr } = await supabase
+                .from('org_members')
+                .delete()
+                .eq('org_id', currentOrg.id)
+                .eq('user_id', userId);
+
+            if (deleteErr) throw deleteErr;
+
+            setMembers((prev) => prev.filter((m) => m.userId !== userId));
             setSuccess('Member removed');
             setTimeout(() => setSuccess(''), 3000);
         } catch (err) {
@@ -107,20 +136,20 @@ export default function MemberManager() {
 
             {/* Member List */}
             <div className="space-y-2 mb-6">
-                {memberDetails.map(({ uid, isOwner: memberIsOwner, isSelf }) => (
+                {members.map(({ userId, isOwner: memberIsOwner, isSelf }) => (
                     <div
-                        key={uid}
+                        key={userId}
                         className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
                     >
                         <div className="flex items-center gap-2">
                             <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
                                 <span className="text-xs font-bold text-primary">
-                                    {uid.slice(0, 2).toUpperCase()}
+                                    {userId.slice(0, 2).toUpperCase()}
                                 </span>
                             </div>
                             <div>
                                 <p className="text-sm font-medium text-slate-700">
-                                    {uid.slice(0, 12)}...
+                                    {userId.slice(0, 12)}...
                                     {isSelf && <span className="text-xs text-slate-400 ml-1">(you)</span>}
                                 </p>
                             </div>
@@ -132,7 +161,7 @@ export default function MemberManager() {
                         </div>
                         {isOwner && !memberIsOwner && (
                             <button
-                                onClick={() => handleRemoveMember(uid)}
+                                onClick={() => handleRemoveMember(userId)}
                                 className="text-slate-400 hover:text-danger transition-colors p-1"
                                 title="Remove member"
                             >

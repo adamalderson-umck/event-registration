@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { auth } from '../services/firebase';
+import { supabase } from '../services/supabase';
 import { LogIn, Loader2, CalendarDays } from 'lucide-react';
 import Button from './ui/Button';
 import Card from './ui/Card';
 
-export default function AdminLogin({ onAuthenticated }) {
+export default function AdminLogin() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -14,17 +13,18 @@ export default function AdminLogin({ onAuthenticated }) {
         setError('');
 
         try {
-            const provider = new GoogleAuthProvider();
-            await signInWithPopup(auth, provider);
-            onAuthenticated();
+            const { error: authError } = await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: `${window.location.origin}/?admin=true`,
+                },
+            });
+
+            if (authError) throw authError;
+            // OAuth redirects — onAuthenticated is handled by App.jsx auth state listener
         } catch (err) {
             console.error('Sign-in error:', err);
-            if (err.code === 'auth/popup-closed-by-user') {
-                setError('Sign-in cancelled');
-            } else {
-                setError(err.message || 'Failed to sign in');
-            }
-        } finally {
+            setError(err.message || 'Failed to sign in');
             setLoading(false);
         }
     };

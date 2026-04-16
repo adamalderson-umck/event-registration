@@ -7,6 +7,11 @@ export default function SignaturePad({ onChange, disabled }) {
     const canvasRef = useRef(null);
     const padRef = useRef(null);
 
+    const onChangeRef = useRef(onChange);
+    useEffect(() => {
+        onChangeRef.current = onChange;
+    }, [onChange]);
+
     const resizeCanvas = useCallback(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -19,10 +24,13 @@ export default function SignaturePad({ onChange, disabled }) {
 
         // Clear after resize since canvas content is lost
         if (padRef.current) {
+            const wasEmpty = padRef.current.isEmpty();
             padRef.current.clear();
-            onChange(null);
+            if (!wasEmpty) {
+                onChangeRef.current(null);
+            }
         }
-    }, [onChange]);
+    }, []);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -35,9 +43,9 @@ export default function SignaturePad({ onChange, disabled }) {
 
         padRef.current.addEventListener('endStroke', () => {
             if (padRef.current.isEmpty()) {
-                onChange(null);
+                onChangeRef.current(null);
             } else {
-                onChange(padRef.current.toDataURL('image/png'));
+                onChangeRef.current(padRef.current.toDataURL('image/png'));
             }
         });
 
@@ -50,7 +58,7 @@ export default function SignaturePad({ onChange, disabled }) {
                 padRef.current.off();
             }
         };
-    }, [onChange, resizeCanvas]);
+    }, [resizeCanvas]);
 
     useEffect(() => {
         if (padRef.current) {

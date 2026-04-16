@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { supabase } from '../services/supabase';
 import {
     ArrowLeft, Search, Printer, FileText, ClipboardList,
-    BarChart3, Users, Loader2, X, Eye
+    BarChart3, Users, Loader2, X, Eye, Download, XCircle
 } from 'lucide-react';
 import {
     printIndividualRegistration,
@@ -16,6 +15,7 @@ import Card from './ui/Card';
 import Input from './ui/Input';
 import Select from './ui/Select';
 import SignatureViewer from './SignatureViewer';
+import { downloadCsv } from '../utils/exportCsv';
 
 export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
     const [registrations, setRegistrations] = useState([]);
@@ -23,26 +23,71 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
     const [selectedReg, setSelectedReg] = useState(null);
+    const [cancellingId, setCancellingId] = useState(null);
 
-    // Real-time listener
+    // Initial fetch + Realtime subscription
     useEffect(() => {
         if (!orgId || !eventId) return;
 
-        const regsRef = collection(db, 'organizations', orgId, 'registrations');
-        const q = query(regsRef, orderBy('createdAt', 'desc'));
+        const fetchRegistrations = async () => {
+            const { data, error } = await supabase
+                .from('registrations')
+                .select('*')
+                .eq('event_id', eventId)
+                .eq('org_id', orgId)
+                .order('created_at', { ascending: false });
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const regs = snapshot.docs
-                .map((doc) => ({ id: doc.id, ...doc.data() }))
-                .filter((reg) => reg.eventId === eventId);
-            setRegistrations(regs);
+            if (error) {
+                console.error('Error fetching registrations:', error);
+            } else {
+                setRegistrations(data || []);
+            }
             setLoading(false);
-        });
+        };
 
-        return () => unsubscribe();
+        fetchRegistrations();
+
+        // Realtime subscription
+        const channel = supabase
+            .channel(`registrations:${eventId}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'registrations',
+                filter: `event_id=eq.${eventId}`
+            }, () => {
+                fetchRegistrations();
+            })
+            .subscribe();
+
+        return () => supabase.removeChannel(channel);
     }, [orgId, eventId]);
 
-    const formFields = event?.formFields || [];
+    const handleAdminCancel = async (regId) => {
+        if (!confirm('Are you sure you want to cancel this registration? This will open up a spot and may promote someone from the waitlist.')) {
+            return;
+        }
+
+        setCancellingId(regId);
+        try {
+            const { error: rpcErr } = await supabase.rpc('cancel_registration', {
+                p_registration_id: regId,
+                p_org_id: orgId,
+            });
+
+            if (rpcErr) throw rpcErr;
+            
+            if (selectedReg && selectedReg.id === regId) {
+                setSelectedReg(prev => ({ ...prev, status: 'cancelled' }));
+            }
+        } catch (err) {
+            console.error('Failed to cancel registration:', err);
+            alert('Failed to cancel registration: ' + err.message);
+        } finally {
+            setCancellingId(null);
+        }
+    };
+    const formFields = useMemo(() => event?.form_fields || [], [event?.form_fields]);
 
     // Filtered registrations
     const filtered = useMemo(() => {
@@ -56,7 +101,8 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
             const term = searchTerm.toLowerCase();
             result = result.filter((reg) =>
                 formFields.some((field) => {
-                    const val = reg.formData?.[field.id];
+                    const formData = getFormData(reg);
+                    const val = formData[field.id];
                     if (!val) return false;
                     const str = Array.isArray(val) ? val.join(' ') : String(val);
                     return str.toLowerCase().includes(term);
@@ -80,6 +126,14 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
         return String(val);
     };
 
+    const getFormData = (reg) => {
+        if (!reg?.form_data) return {};
+        if (typeof reg.form_data === 'string') {
+            try { return JSON.parse(reg.form_data); } catch { return {}; }
+        }
+        return reg.form_data;
+    };
+
     if (loading) {
         return (
             <div className="flex justify-center py-20">
@@ -96,13 +150,25 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
                     <Button variant="ghost" onClick={() => setSelectedReg(null)}>
                         <ArrowLeft className="w-4 h-4" /> Back to List
                     </Button>
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => printIndividualRegistration(selectedReg, event)}
-                    >
-                        <Printer className="w-4 h-4" /> Print
-                    </Button>
+                    <div className="flex gap-2">
+                        {selectedReg.status !== 'cancelled' && (
+                            <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => handleAdminCancel(selectedReg.id)}
+                                loading={cancellingId === selectedReg.id}
+                            >
+                                <XCircle className="w-4 h-4" /> Cancel Registration
+                            </Button>
+                        )}
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => printIndividualRegistration(selectedReg, event)}
+                        >
+                            <Printer className="w-4 h-4" /> Print
+                        </Button>
+                    </div>
                 </div>
 
                 <Card className="p-6">
@@ -118,23 +184,23 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
                             <div key={field.id} className="grid grid-cols-3 gap-2 py-2 border-b border-slate-100 last:border-0">
                                 <dt className="text-sm font-medium text-slate-500">{field.label}</dt>
                                 <dd className="col-span-2 text-sm text-slate-900">
-                                    {formatValue(selectedReg.formData?.[field.id])}
+                                    {formatValue(getFormData(selectedReg)[field.id])}
                                 </dd>
                             </div>
                         ))}
                     </div>
 
                     {/* Waiver Signature */}
-                    {selectedReg.signatureRecord?.signed && (
+                    {selectedReg.signature_record?.signed && (
                         <div className="mt-4">
                             <SignatureViewer registration={selectedReg} event={event} />
                         </div>
                     )}
 
                     <div className="mt-4 pt-4 border-t border-slate-200 text-xs text-slate-400 space-y-1">
-                        <p>Payment: {selectedReg.paymentStatus || 'N/A'}{selectedReg.paymentMethod ? ` (${selectedReg.paymentMethod})` : ''}</p>
-                        <p>Submitted: {selectedReg.createdAt?.toDate?.()
-                            ? selectedReg.createdAt.toDate().toLocaleString()
+                        <p>Payment: {selectedReg.payment_status || 'N/A'}{selectedReg.payment_method ? ` (${selectedReg.payment_method})` : ''}</p>
+                        <p>Submitted: {selectedReg.created_at
+                            ? new Date(selectedReg.created_at).toLocaleString()
                             : 'N/A'}</p>
                     </div>
                 </Card>
@@ -192,6 +258,13 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
 
                 {/* Print Buttons */}
                 <div className="flex gap-2 ml-auto">
+                    <Button variant="secondary" size="sm" onClick={() => downloadCsv(
+                        filtered,
+                        formFields,
+                        `${event?.title?.replace(/\s+/g, '_') || 'registrations'}.csv`
+                    )} title="Export to CSV">
+                        <Download className="w-4 h-4" /> CSV
+                    </Button>
                     <Button variant="secondary" size="sm" onClick={() => printRegistrationTable(filtered, event)} title="Print Registration Table">
                         <ClipboardList className="w-4 h-4" /> Table
                     </Button>
@@ -232,7 +305,7 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
                                     <tr key={reg.id} className="hover:bg-slate-50 transition-colors">
                                         {formFields.slice(0, 5).map((field) => (
                                             <td key={field.id} className="px-4 py-3 text-sm text-slate-700 max-w-[200px] truncate">
-                                                {formatValue(reg.formData?.[field.id])}
+                                                {formatValue(getFormData(reg)[field.id])}
                                             </td>
                                         ))}
                                         <td className="px-4 py-3">

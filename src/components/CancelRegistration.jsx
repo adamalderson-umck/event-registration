@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { supabase } from '../services/supabase';
 import { XCircle, CheckCircle2, Loader2, AlertTriangle } from 'lucide-react';
 import Button from './ui/Button';
 import Card from './ui/Card';
@@ -11,13 +10,9 @@ import Card from './ui/Card';
  *
  * The token encodes: orgId, registrationId, and a signature.
  * Token format (base64): orgId:registrationId:hmacSignature
- *
- * For now, we use a simpler approach: token = base64(orgId:registrationId)
- * The Cloud Function (Task 11) will add HMAC verification.
  */
 export default function CancelRegistration({ token }) {
     const [state, setState] = useState('loading'); // loading, confirm, success, error, already-cancelled
-    const [registration, setRegistration] = useState(null);
     const [eventTitle, setEventTitle] = useState('');
     const [error, setError] = useState('');
     const [cancelling, setCancelling] = useState(false);
@@ -25,47 +20,32 @@ export default function CancelRegistration({ token }) {
     useEffect(() => {
         const decodeAndFetch = async () => {
             try {
-                // Decode token
-                const decoded = atob(token);
-                const parts = decoded.split(':');
+                // We no longer query the database locally to protect PII.
+                // Instead, we hit our secure Edge Function proxy with 'dry_run: true' 
+                // to validate the HMAC token and check the status using elevated backend keys.
+                const { data, error: fnErr } = await supabase.functions.invoke('verify-cancel-token', {
+                    body: { token, dry_run: true },
+                });
 
-                if (parts.length < 2) {
-                    setState('error');
-                    setError('Invalid cancellation link');
-                    return;
+                if (fnErr) throw fnErr;
+                if (data?.error) {
+                    if (data.error === 'Registration not found') {
+                        setState('error');
+                        setError('Registration not found');
+                        return;
+                    }
+                    throw new Error(data.error);
                 }
 
-                const [orgId, registrationId] = parts;
-
-                // Fetch registration
-                const regRef = doc(db, 'organizations', orgId, 'registrations', registrationId);
-
-                // Direct doc get
-                const snap = await getDoc(regRef);
-
-                if (!snap.exists()) {
-                    setState('error');
-                    setError('Registration not found');
-                    return;
-                }
-
-                const regData = { id: snap.id, orgId, ...snap.data() };
-
-                if (regData.status === 'cancelled') {
+                if (data?.status === 'cancelled') {
                     setState('already-cancelled');
                     return;
                 }
 
-                // Fetch event title
-                if (regData.eventId) {
-                    const eventRef = doc(db, 'organizations', orgId, 'events', regData.eventId);
-                    const eventSnap = await getDoc(eventRef);
-                    if (eventSnap.exists()) {
-                        setEventTitle(eventSnap.data().title || 'Event');
-                    }
+                if (data?.eventTitle) {
+                    setEventTitle(data.eventTitle);
                 }
 
-                setRegistration(regData);
                 setState('confirm');
             } catch (err) {
                 console.error('Cancel page error:', err);
@@ -82,19 +62,19 @@ export default function CancelRegistration({ token }) {
     }, [token]);
 
     const handleCancel = async () => {
-        if (!registration) return;
-
         setCancelling(true);
         try {
-            const regRef = doc(db, 'organizations', registration.orgId, 'registrations', registration.id);
-            await updateDoc(regRef, {
-                status: 'cancelled',
-                cancelledAt: serverTimestamp(),
+            const { data, error: fnErr } = await supabase.functions.invoke('verify-cancel-token', {
+                body: { token },
             });
+
+            if (fnErr) throw fnErr;
+            if (data?.error) throw new Error(data.error);
+
             setState('success');
         } catch (err) {
             console.error('Cancellation error:', err);
-            setError('Failed to cancel registration. Please try again.');
+            setError(err.message || 'Failed to cancel registration. Please try again.');
         } finally {
             setCancelling(false);
         }

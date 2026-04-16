@@ -44,20 +44,17 @@ function formatValue(value) {
     return String(value);
 }
 
-function getFieldLabel(fieldId, formFields) {
-    const field = formFields.find((f) => f.id === fieldId);
-    return field?.label || fieldId;
-}
+
 
 /**
  * Print a single registration's full details
  */
 export function printIndividualRegistration(registration, event) {
-    const formFields = event.formFields || [];
+    const formFields = (event.form_fields || []).filter((f) => f.type !== 'sectionBreak');
     const rows = formFields.map((field) => `
     <div class="field-row">
       <div class="field-label">${field.label}</div>
-      <div class="field-value">${formatValue(registration.formData?.[field.id])}</div>
+      <div class="field-value">${formatValue(registration.form_data?.[field.id])}</div>
     </div>
   `).join('');
 
@@ -66,9 +63,9 @@ export function printIndividualRegistration(registration, event) {
     <h2>Individual Registration</h2>
     <div class="meta">
       Status: <strong>${registration.status || 'pending'}</strong> &nbsp;|&nbsp;
-      Payment: <strong>${registration.paymentStatus || 'N/A'}</strong> &nbsp;|&nbsp;
-      Date: <strong>${registration.createdAt?.toDate?.()
-            ? registration.createdAt.toDate().toLocaleString()
+      Payment: <strong>${registration.payment_status || 'N/A'}</strong> &nbsp;|&nbsp;
+      Date: <strong>${registration.created_at
+            ? new Date(registration.created_at).toLocaleString()
             : 'N/A'}</strong>
     </div>
     <hr />
@@ -82,13 +79,13 @@ export function printIndividualRegistration(registration, event) {
  * Print a table of all registrations with form field columns
  */
 export function printRegistrationTable(registrations, event) {
-    const formFields = event.formFields || [];
+    const formFields = (event.form_fields || []).filter((f) => f.type !== 'sectionBreak');
     const headers = formFields.map((f) => `<th>${f.label}</th>`).join('');
     const statusHeader = '<th>Status</th>';
 
     const rows = registrations.map((reg) => {
         const cells = formFields.map((f) =>
-            `<td>${formatValue(reg.formData?.[f.id])}</td>`
+            `<td>${formatValue(reg.form_data?.[f.id])}</td>`
         ).join('');
         return `<tr>${cells}<td>${reg.status || 'pending'}</td></tr>`;
     }).join('');
@@ -109,7 +106,7 @@ export function printRegistrationTable(registrations, event) {
  * Print a sign-in sheet with name + signature column
  */
 export function printSignInSheet(registrations, event) {
-    const formFields = event.formFields || [];
+    const formFields = (event.form_fields || []).filter((f) => f.type !== 'sectionBreak');
     // Try to find name-like fields
     const nameFields = formFields.filter((f) =>
         /name/i.test(f.label) && f.type === 'text'
@@ -120,9 +117,9 @@ export function printSignInSheet(registrations, event) {
 
     const confirmedRegs = registrations.filter((r) => r.status !== 'cancelled');
 
-    const rows = confirmedRegs.map((reg, i) => {
+    const rows = confirmedRegs.map((reg) => {
         const cells = displayFields.map((f) =>
-            `<td>${formatValue(reg.formData?.[f.id])}</td>`
+            `<td>${formatValue(reg.form_data?.[f.id])}</td>`
         ).join('');
         return `<tr>${cells}<td class="sign-in-row"></td></tr>`;
     }).join('');
@@ -135,8 +132,8 @@ export function printSignInSheet(registrations, event) {
 
     const html = `<!DOCTYPE html><html><head><title>${event.title} - Sign In Sheet</title>${printStyles}</head><body>
     <h1>${event.title}</h1>
-    <h2>Sign-In Sheet &nbsp;·&nbsp; ${event.startDate
-            ? new Date(event.startDate).toLocaleDateString()
+    <h2>Sign-In Sheet &nbsp;·&nbsp; ${event.start_date
+            ? new Date(event.start_date).toLocaleDateString()
             : ''}</h2>
     <table>
       <thead><tr>${headers}<th>Signature / Check-In</th></tr></thead>
@@ -156,9 +153,9 @@ export function printEventSummary(registrations, event) {
     const cancelled = registrations.filter((r) => r.status === 'cancelled').length;
     const pending = registrations.filter((r) => r.status === 'pending').length;
 
-    const paid = registrations.filter((r) => r.paymentStatus === 'paid').length;
-    const paymentTotal = event.paymentEnabled && event.paymentAmount
-        ? (paid * event.paymentAmount).toFixed(2)
+    const paid = registrations.filter((r) => r.payment_status === 'paid').length;
+    const paymentTotal = event.payment_enabled && event.payment_amount
+        ? (paid * event.payment_amount).toFixed(2)
         : null;
 
     const html = `<!DOCTYPE html><html><head><title>${event.title} - Summary</title>${printStyles}</head><body>
@@ -166,8 +163,8 @@ export function printEventSummary(registrations, event) {
     <h2>Event Summary</h2>
     <div class="meta">
       ${event.location ? `Location: ${event.location} &nbsp;|&nbsp;` : ''}
-      ${event.startDate ? `Date: ${new Date(event.startDate).toLocaleDateString()}` : ''}
-      ${event.endDate && event.endDate !== event.startDate ? ` – ${new Date(event.endDate).toLocaleDateString()}` : ''}
+      ${event.start_date ? `Date: ${new Date(event.start_date).toLocaleDateString()}` : ''}
+      ${event.end_date && event.end_date !== event.start_date ? ` – ${new Date(event.end_date).toLocaleDateString()}` : ''}
     </div>
     <div class="summary-grid">
       <div class="summary-box">

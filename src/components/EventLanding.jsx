@@ -1,39 +1,71 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { supabase } from '../services/supabase';
 import { CalendarDays, Loader2 } from 'lucide-react';
 import EventCard from './EventCard';
 
 export default function EventLanding({ orgId, orgName, onSelectEvent }) {
     const [events, setEvents] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(!!orgId);
 
     useEffect(() => {
         if (!orgId) {
-            setLoading(false);
             return;
         }
 
-        const eventsRef = collection(db, 'organizations', orgId, 'events');
-        const q = query(
-            eventsRef,
-            where('status', '==', 'active'),
-            orderBy('startDate', 'asc')
-        );
+        // Initial fetch
+        const fetchEvents = async () => {
+            const { data, error } = await supabase
+                .from('events')
+                .select('*')
+                .eq('org_id', orgId)
+                .eq('status', 'active')
+                .order('start_date', { ascending: true });
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const eventList = snapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...doc.data(),
-            }));
-            setEvents(eventList);
+            if (error) {
+                console.error('Error fetching events:', error);
+            } else {
+                setEvents(data || []);
+            }
             setLoading(false);
-        }, (error) => {
-            console.error('Error fetching events:', error);
-            setLoading(false);
-        });
+        };
 
-        return () => unsubscribe();
+        fetchEvents();
+
+        // Realtime subscription for live updates
+        const channel = supabase
+            .channel(`landing-events:${orgId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'events',
+                    filter: `org_id=eq.${orgId}`,
+                },
+                (payload) => {
+                    if (payload.eventType === 'INSERT' && payload.new.status === 'active') {
+                        setEvents((prev) => [...prev, payload.new].sort(
+                            (a, b) => new Date(a.start_date) - new Date(b.start_date)
+                        ));
+                    } else if (payload.eventType === 'UPDATE') {
+                        setEvents((prev) => {
+                            const updated = prev
+                                .map((e) => (e.id === payload.new.id ? payload.new : e))
+                                .filter((e) => e.status === 'active');
+                            return updated.sort(
+                                (a, b) => new Date(a.start_date) - new Date(b.start_date)
+                            );
+                        });
+                    } else if (payload.eventType === 'DELETE') {
+                        setEvents((prev) => prev.filter((e) => e.id !== payload.old.id));
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, [orgId]);
 
     if (loading) {

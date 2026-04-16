@@ -1,9 +1,12 @@
 import React from 'react';
-import { CheckCircle2, CalendarDays, ArrowLeft } from 'lucide-react';
+import { CheckCircle2, CalendarDays, ArrowLeft, Calendar } from 'lucide-react';
+import { buildGoogleCalendarUrl, downloadIcs } from '../utils/calendarLinks';
 import Button from './ui/Button';
 import Card from './ui/Card';
 
-export default function SuccessState({ eventTitle, isWaitlisted, onReset }) {
+export default function SuccessState({ event, isWaitlisted, onReset }) {
+    const eventTitle = event?.title || '';
+
     return (
         <Card className="max-w-lg mx-auto p-8 text-center">
             <div className={`inline-flex p-4 rounded-full mb-6 ${isWaitlisted ? 'bg-amber-50' : 'bg-green-50'}`}>
@@ -25,9 +28,28 @@ export default function SuccessState({ eventTitle, isWaitlisted, onReset }) {
                 }
             </p>
 
-            <p className="text-sm text-slate-400 mb-8">
+            <p className="text-sm text-slate-400 mb-6">
                 A confirmation email will be sent shortly with your registration details and a cancellation link.
             </p>
+
+            {event?.start_date && !isWaitlisted && (
+                <div className="flex justify-center gap-4 mb-6">
+                    <a
+                        href={buildGoogleCalendarUrl(event)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+                    >
+                        <Calendar className="w-4 h-4" /> Google Calendar
+                    </a>
+                    <button
+                        onClick={() => downloadIcs(event)}
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline cursor-pointer"
+                    >
+                        <Calendar className="w-4 h-4" /> Download .ics
+                    </button>
+                </div>
+            )}
 
             <Button variant="secondary" onClick={onReset}>
                 <ArrowLeft className="w-4 h-4" />

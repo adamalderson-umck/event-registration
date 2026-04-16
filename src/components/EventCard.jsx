@@ -1,10 +1,11 @@
 import React from 'react';
 import { CalendarDays, MapPin, Users, ArrowRight, Clock } from 'lucide-react';
 import Card from './ui/Card';
+import { resolveTheme } from '../constants/themePresets';
 
 export default function EventCard({ event, onSelect }) {
     const spotsLeft = event.capacity
-        ? event.capacity - (event.registrationCount || 0)
+        ? event.capacity - (event.registration_count || 0)
         : null;
 
     const isFull = event.capacity && spotsLeft <= 0;
@@ -18,13 +19,18 @@ export default function EventCard({ event, onSelect }) {
         });
     };
 
+    const theme = resolveTheme(event.theme, null);
+
     return (
         <Card
             className="p-0 overflow-hidden cursor-pointer group hover:shadow-lg hover:border-primary/30 transition-all duration-300"
             onClick={() => onSelect(event)}
         >
             {/* Color accent bar */}
-            <div className="h-1.5 bg-gradient-to-r from-primary to-accent" />
+            <div
+                className="h-1.5"
+                style={{ background: `linear-gradient(to right, ${theme.primary}, ${theme.accent})` }}
+            />
 
             <div className="p-5">
                 <div className="flex items-start justify-between mb-3">
@@ -39,13 +45,13 @@ export default function EventCard({ event, onSelect }) {
                 )}
 
                 <div className="space-y-2 text-sm text-slate-500">
-                    {event.startDate && (
+                    {event.start_date && (
                         <div className="flex items-center gap-2">
                             <CalendarDays className="w-4 h-4 text-slate-400 shrink-0" />
                             <span>
-                                {formatDate(event.startDate)}
-                                {event.endDate && event.endDate !== event.startDate && (
-                                    <> – {formatDate(event.endDate)}</>
+                                {formatDate(event.start_date)}
+                                {event.end_date && event.end_date !== event.start_date && (
+                                    <> – {formatDate(event.end_date)}</>
                                 )}
                             </span>
                         </div>
@@ -65,11 +71,11 @@ export default function EventCard({ event, onSelect }) {
                         <div className="flex items-center justify-between">
                             <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
                                 <Clock className="w-3 h-3" />
-                                {event.waitlistEnabled ? 'Waitlist Open' : 'Full'}
+                                {event.waitlist_enabled ? 'Waitlist Open' : 'Full'}
                             </span>
-                            {event.waitlistEnabled && event.waitlistCount > 0 && (
+                            {event.waitlist_enabled && event.waitlist_count > 0 && (
                                 <span className="text-xs text-slate-400">
-                                    {event.waitlistCount} on waitlist
+                                    {event.waitlist_count} on waitlist
                                 </span>
                             )}
                         </div>

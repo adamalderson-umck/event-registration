@@ -1,10 +1,9 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { db, auth } from './services/firebase';
-import { signInAnonymously } from 'firebase/auth';
+import { supabase } from './services/supabase';
 import { AppModeProvider } from './context/AppModeContext';
 import { OrgProvider } from './context/OrgContext';
 import { CalendarDays, Loader2 } from 'lucide-react';
+import ErrorBoundary from './components/ErrorBoundary';
 import EventLanding from './components/EventLanding';
 import EventRegistrationForm from './components/EventRegistrationForm';
 
@@ -35,7 +34,6 @@ function AppContent() {
       setOrgId(embedOrgId);
       setEventId(embedEventId);
       setView('form');
-      ensureAnonymousAuth();
       return;
     }
 
@@ -49,9 +47,15 @@ function AppContent() {
       }
     }
 
-    // Admin mode
+    // Admin mode — check for existing session first
     if (params.get('admin') === 'true') {
-      setView('admin-login');
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          setView('admin-dashboard');
+        } else {
+          setView('admin-login');
+        }
+      });
       return;
     }
 
@@ -74,7 +78,6 @@ function AppContent() {
           setView('not-found');
         }
       });
-      ensureAnonymousAuth();
       return;
     }
 
@@ -82,36 +85,45 @@ function AppContent() {
     setView('no-org');
   }, []);
 
-  const ensureAnonymousAuth = async () => {
-    try {
-      if (!auth.currentUser) {
-        await signInAnonymously(auth);
+  // Listen for auth state changes (handles OAuth redirect return)
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('admin') === 'true') {
+          setView('admin-dashboard');
+        }
       }
-    } catch (err) {
-      console.error('Anonymous auth failed:', err);
-    }
-  };
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const resolveOrg = async (slug) => {
     try {
       // Try by slug first
-      const orgsRef = collection(db, 'organizations');
-      const q = query(orgsRef, where('slug', '==', slug));
-      const snapshot = await getDocs(q);
+      const { data, error } = await supabase
+        .from('organizations')
+        .select('id, name, slug')
+        .eq('slug', slug)
+        .maybeSingle();
 
-      if (!snapshot.empty) {
-        const orgDoc = snapshot.docs[0];
-        return { id: orgDoc.id, ...orgDoc.data() };
+      if (error) throw error;
+
+      if (data) {
+        return data;
       }
 
       // Try by ID
-      const orgRef = doc(db, 'organizations', slug);
-      const orgSnap = await getDoc(orgRef);
-      if (orgSnap.exists()) {
-        return { id: orgSnap.id, ...orgSnap.data() };
-      }
+      const { data: orgById, error: idError } = await supabase
+        .from('organizations')
+        .select('id, name, slug')
+        .eq('id', slug)
+        .maybeSingle();
 
-      return null;
+      if (idError) throw idError;
+
+      return orgById || null;
     } catch (err) {
       console.error('Error resolving org:', err);
       return null;
@@ -256,22 +268,24 @@ export default function App() {
   const isEmbed = rootEl?.getAttribute('data-mode') === 'embed';
 
   return (
-    <AppModeProvider>
-      <OrgProvider>
-        {isEmbed ? (
-          <div className="app-embed">
-            <AppContent />
-          </div>
-        ) : (
-          <div className="app-standalone min-h-screen flex flex-col">
-            <Header />
-            <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
+    <ErrorBoundary>
+      <AppModeProvider>
+        <OrgProvider>
+          {isEmbed ? (
+            <div className="app-embed">
               <AppContent />
-            </main>
-            <Footer />
-          </div>
-        )}
-      </OrgProvider>
-    </AppModeProvider>
+            </div>
+          ) : (
+            <div className="app-standalone min-h-screen flex flex-col">
+              <Header />
+              <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
+                <AppContent />
+              </main>
+              <Footer />
+            </div>
+          )}
+        </OrgProvider>
+      </AppModeProvider>
+    </ErrorBoundary>
   );
 }

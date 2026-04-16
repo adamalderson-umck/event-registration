@@ -1,32 +1,33 @@
 import React from 'react';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { supabase } from '../services/supabase';
 import Card from './ui/Card';
 
 const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID || 'test';
 
-export default function PaymentSection({ orgId, registrationId, amount, onPaymentComplete }) {
+export default function PaymentSection({ registrationId, amount, onPaymentComplete }) {
     if (!amount || amount <= 0) return null;
 
     const handleApprove = async (data, actions) => {
         try {
             const details = await actions.order.capture();
 
-            // Update registration with payment info
+            // Update registration with payment info via RPC
             if (registrationId) {
-                const regRef = doc(db, 'organizations', orgId, 'registrations', registrationId);
-                await updateDoc(regRef, {
-                    paymentStatus: 'paid',
-                    paymentMethod: 'paypal',
-                    paymentId: details.id,
-                    paymentDetails: {
+                const { error } = await supabase.rpc('update_payment_status', {
+                    p_registration_id: registrationId,
+                    p_payment_status: 'paid',
+                    p_payment_method: 'paypal',
+                    p_payment_details: {
                         payerEmail: details.payer?.email_address,
                         payerName: details.payer?.name?.given_name,
                         transactionId: details.purchase_units?.[0]?.payments?.captures?.[0]?.id,
+                        paypalOrderId: details.id,
                         capturedAt: new Date().toISOString(),
                     },
                 });
+
+                if (error) throw error;
             }
 
             onPaymentComplete?.({ success: true, details });

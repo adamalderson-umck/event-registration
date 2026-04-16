@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '../services/firebase';
-import { Building2, Mail, Server, Plus } from 'lucide-react';
+import { supabase } from '../services/supabase';
+import { Building2, Mail, Server, Plus, Eye, EyeOff } from 'lucide-react';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Label from './ui/Label';
@@ -12,9 +11,12 @@ export default function CreateOrg({ onCreated }) {
         name: '',
         smtpHost: '',
         smtpPort: '465',
+        smtpUser: '',
+        smtpPass: '',
         fromName: '',
         fromEmail: '',
     });
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -29,35 +31,74 @@ export default function CreateOrg({ onCreated }) {
             return;
         }
 
+        if (form.smtpHost.trim()) {
+            const port = parseInt(form.smtpPort) || 465;
+            if (![25, 465, 587, 2525].includes(port)) {
+                setError(`Port ${port} is not a valid standard outbound SMTP port. Do not use incoming IMAP specific ports like 993.`);
+                return;
+            }
+            if (!form.smtpUser.trim() || !form.smtpPass) {
+                setError('SMTP Username and Password are strictly required if an SMTP Host is provided.');
+                return;
+            }
+        }
+
         setLoading(true);
         setError('');
 
         try {
-            const user = auth.currentUser;
+            const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error('Not authenticated');
 
-            const slug = form.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+            const baseSlug = form.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+            const suffix = Math.random().toString(16).slice(2, 6);
+            const slug = `${baseSlug}-${suffix}`;
 
+            // First create the organization without the SMTP config
             const orgData = {
                 name: form.name.trim(),
-                slug,
-                ownerUid: user.uid,
-                members: [user.uid],
-                createdAt: serverTimestamp(),
+                slug: slug,
+                owner_uid: user.id
             };
 
-            // Only add SMTP config if host is provided
+            const { data: orgDatalist, error: insertError } = await supabase
+                .from('organizations')
+                .insert(orgData)
+                .select();
+
+            if (insertError) throw insertError;
+            const newOrg = orgDatalist[0];
+
+            // Setup secure SMTP via RPC if host was provided
             if (form.smtpHost.trim()) {
-                orgData.smtpConfig = {
-                    host: form.smtpHost.trim(),
-                    port: parseInt(form.smtpPort) || 465,
-                    fromName: form.fromName.trim() || form.name.trim(),
-                    fromEmail: form.fromEmail.trim(),
-                };
+                const { error: rpcError } = await supabase.rpc('secure_smtp_config', {
+                    p_org_id: newOrg.id,
+                    p_host: form.smtpHost.trim(),
+                    p_port: parseInt(form.smtpPort) || 465,
+                    p_user: form.smtpUser.trim(),
+                    p_pass: form.smtpPass, // Sent securely over HTTPS, not stored raw
+                    p_from_email: form.fromEmail.trim() || form.smtpUser.trim(),
+                    p_from_name: form.fromName.trim() || form.name.trim()
+                });
+                
+                if (rpcError) {
+                    console.error('SMTP Setup failed (Org created, emails disabled):', rpcError);
+                    // Non-fatal, just log and optionally alert
+                }
             }
 
-            const docRef = await addDoc(collection(db, 'organizations'), orgData);
-            onCreated({ id: docRef.id, ...orgData });
+            // Add self as owner member
+            const { error: memberErr } = await supabase
+                .from('org_members')
+                .insert({
+                    org_id: newOrg.id,
+                    user_id: user.id,
+                    role: 'owner',
+                });
+
+            if (memberErr) throw memberErr;
+
+            onCreated(newOrg);
         } catch (err) {
             console.error('Error creating organization:', err);
             setError(err.message || 'Failed to create organization');
@@ -101,7 +142,7 @@ export default function CreateOrg({ onCreated }) {
                         </h3>
                     </div>
                     <p className="text-xs text-slate-500 mb-4">
-                        Configure SMTP to send confirmation emails. You can set this up later.
+                        Configure connection details for your Outgoing Mail Server (SMTP) to send automated confirmation emails.
                     </p>
 
                     <div className="space-y-4">
@@ -125,6 +166,39 @@ export default function CreateOrg({ onCreated }) {
                                     value={form.smtpPort}
                                     onChange={handleChange}
                                 />
+                            </div>
+                        </div>
+
+                        <div>
+                            <Label htmlFor="smtp-user" required={!!form.smtpHost.trim()}>SMTP Username</Label>
+                            <Input
+                                id="smtp-user"
+                                name="smtpUser"
+                                value={form.smtpUser}
+                                onChange={handleChange}
+                                placeholder="user@example.org"
+                            />
+                        </div>
+
+                        <div>
+                            <Label htmlFor="smtp-pass" required={!!form.smtpHost.trim()}>SMTP Password</Label>
+                            <div className="relative">
+                                <Input
+                                    id="smtp-pass"
+                                    name="smtpPass"
+                                    type={showPassword ? 'text' : 'password'}
+                                    value={form.smtpPass}
+                                    onChange={handleChange}
+                                    placeholder="••••••••"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword((v) => !v)}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                                    tabIndex={-1}
+                                >
+                                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </button>
                             </div>
                         </div>
 
