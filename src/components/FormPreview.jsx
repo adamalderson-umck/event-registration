@@ -21,7 +21,8 @@ import { resolveTheme, resolveHeaderImage } from '../constants/themePresets';
  * @param {Function} [props.onBack]      - Previous-page handler
  * @param {Function} [props.onSubmit]    - Form submit handler (e) => void
  * @param {boolean} [props.submitting]   - Show loading state on submit button
- * @param {React.ReactNode} [props.waiverSlot]  - Waiver component to render on last page
+ * @param {React.ReactNode} [props.waiverSlot]   - Waiver component to render on last page
+ * @param {React.ReactNode} [props.captchaSlot]  - CAPTCHA widget to render on last page
  * @param {React.ReactNode} [props.beforeFields] - Content rendered before form fields (e.g. WaitlistNotice)
  */
 export default function FormPreview({
@@ -36,6 +37,7 @@ export default function FormPreview({
     onSubmit,
     submitting = false,
     waiverSlot,
+    captchaSlot,
     beforeFields,
 }) {
     if (!event) return null;
@@ -210,6 +212,9 @@ export default function FormPreview({
 
                     {/* Waiver — only on last page */}
                     {isLastPage && waiverSlot}
+
+                    {/* CAPTCHA — only on last page */}
+                    {isLastPage && captchaSlot}
 
                     {/* Waiver placeholder in read-only mode */}
                     {isLastPage && readOnly && event.waiver_enabled && !waiverSlot && (

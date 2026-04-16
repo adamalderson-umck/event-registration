@@ -6,8 +6,8 @@
  */
 function parseAsUTC(dateStr) {
   if (!dateStr) return new Date(NaN);
-  // Already has timezone designator (Z or +/-)
-  if (/[Z+-]\d*$/.test(dateStr)) return new Date(dateStr);
+  // Has timezone designator: trailing Z, or ±HH:MM offset
+  if (/Z$|[+-]\d{2}:\d{2}$/.test(dateStr)) return new Date(dateStr);
   return new Date(dateStr + 'Z');
 }
 

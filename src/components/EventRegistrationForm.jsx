@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { Loader2 } from 'lucide-react';
 import SuccessState from './SuccessState';
@@ -26,6 +26,10 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         signatureFont: null,
     });
     const [waiverErrors, setWaiverErrors] = useState({});
+    const [turnstileToken, setTurnstileToken] = useState(null);
+    const turnstileRef = useRef(null);
+    const turnstileWidgetId = useRef(null);
+    const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
     // Prevents accidental form submit when Next→Submit buttons swap at the same DOM position
     const justNavigated = useRef(false);
@@ -70,6 +74,45 @@ export default function EventRegistrationForm({ eventId, orgId }) {
 
         if (eventId && orgId) fetchEvent();
     }, [eventId, orgId]);
+
+    // Load Cloudflare Turnstile script (only if site key is configured)
+    useEffect(() => {
+        if (!TURNSTILE_SITE_KEY) return;
+        if (document.getElementById('cf-turnstile-script')) return;
+        const script = document.createElement('script');
+        script.id = 'cf-turnstile-script';
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+    }, [TURNSTILE_SITE_KEY]);
+
+    // Mount Turnstile widget once the container ref and script are ready
+    const mountTurnstile = useCallback(() => {
+        if (!TURNSTILE_SITE_KEY || !turnstileRef.current || !window.turnstile) return;
+        if (turnstileWidgetId.current !== null) return; // already mounted
+        turnstileWidgetId.current = window.turnstile.render(turnstileRef.current, {
+            sitekey: TURNSTILE_SITE_KEY,
+            callback: (token) => setTurnstileToken(token),
+            'expired-callback': () => setTurnstileToken(null),
+            'error-callback': () => setTurnstileToken(null),
+            theme: 'light',
+        });
+    }, [TURNSTILE_SITE_KEY]);
+
+    // Try mounting when the last page is shown (widget lives on last page)
+    useEffect(() => {
+        if (!TURNSTILE_SITE_KEY) return;
+        const tryMount = () => {
+            if (window.turnstile) mountTurnstile();
+        };
+        const script = document.getElementById('cf-turnstile-script');
+        if (script) script.addEventListener('load', tryMount);
+        tryMount(); // in case script already loaded
+        return () => {
+            if (script) script.removeEventListener('load', tryMount);
+        };
+    }, [TURNSTILE_SITE_KEY, mountTurnstile]);
 
     // --- Multi-page and condition helpers ---
     const pages = event ? splitIntoPages(event.form_fields || []) : [];
@@ -203,6 +246,12 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         }
         if (!validate()) return;
 
+        // CAPTCHA check — only if Turnstile is configured
+        if (TURNSTILE_SITE_KEY && !turnstileToken) {
+            setErrors((prev) => ({ ...prev, _form: 'Please complete the CAPTCHA challenge.' }));
+            return;
+        }
+
         setSubmitting(true);
 
         try {
@@ -334,6 +383,10 @@ export default function EventRegistrationForm({ eventId, orgId }) {
 
     return (
         <div className="max-w-2xl mx-auto">
+            {/* Screen-reader live region for form-level errors */}
+            <div aria-live="polite" aria-atomic="true" className="sr-only">
+                {errors._form}
+            </div>
             <FormPreview
                 event={event}
                 formData={formData}
@@ -344,7 +397,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 onNext={handleNext}
                 onBack={handleBack}
                 onSubmit={handleSubmit}
-                submitting={submitting}
+                submitting={submitting || (TURNSTILE_SITE_KEY && !turnstileToken && currentPage === pages.length - 1)}
                 beforeFields={
                     isFull && event.waitlist_enabled
                         ? <WaitlistNotice waitlistCount={event.waitlist_count || 0} />
@@ -362,6 +415,18 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                                 }}
                                 errors={waiverErrors}
                             />
+                        )
+                        : null
+                }
+                captchaSlot={
+                    TURNSTILE_SITE_KEY && currentPage === pages.length - 1
+                        ? (
+                            <div className="mt-4">
+                                <div ref={turnstileRef} />
+                                {errors._form && (
+                                    <p role="alert" className="text-xs text-danger mt-2">{errors._form}</p>
+                                )}
+                            </div>
                         )
                         : null
                 }

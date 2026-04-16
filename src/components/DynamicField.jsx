@@ -7,12 +7,26 @@ import Checkbox from './ui/Checkbox';
 /**
  * DynamicField renders a single form field based on its schema configuration.
  * Supports: text, email, phone, number, textarea, select, checkbox, checkboxGroup, radio, date
+ *
+ * Accessibility: WCAG 2.1 AA compliant
+ * - All inputs have associated <label> via htmlFor/id
+ * - Errors linked via aria-describedby
+ * - Invalid state communicated via aria-invalid
+ * - Group fields use role="group" + aria-labelledby
  */
 export default function DynamicField({ field, value, onChange, error, disabled = false }) {
     const { id, type, label, required, placeholder, options = [] } = field;
+    const inputId = `field-${id}`;
+    const errorId = `field-${id}-error`;
+    const groupLabelId = `field-${id}-label`;
 
     const handleChange = (newValue) => {
         onChange(id, newValue);
+    };
+
+    const sharedInputProps = {
+        'aria-describedby': error ? errorId : undefined,
+        'aria-invalid': error ? 'true' : undefined,
     };
 
     const renderField = () => {
@@ -30,13 +44,14 @@ export default function DynamicField({ field, value, onChange, error, disabled =
 
                 return (
                     <Input
-                        id={`field-${id}`}
+                        id={inputId}
                         type={type === 'phone' ? 'tel' : type}
                         value={value || ''}
                         onChange={(e) => type === 'phone' ? handlePhoneChange(e.target.value) : handleChange(e.target.value)}
                         placeholder={type === 'phone' && !placeholder ? '(555) 555-5555' : placeholder}
                         error={error}
                         disabled={disabled}
+                        {...sharedInputProps}
                     />
                 );
             }
@@ -44,24 +59,27 @@ export default function DynamicField({ field, value, onChange, error, disabled =
             case 'date':
                 return (
                     <Input
-                        id={`field-${id}`}
+                        id={inputId}
                         type="date"
                         value={value || ''}
                         onChange={(e) => handleChange(e.target.value)}
                         error={error}
                         disabled={disabled}
+                        {...sharedInputProps}
                     />
                 );
 
             case 'textarea':
                 return (
                     <textarea
-                        id={`field-${id}`}
+                        id={inputId}
                         value={value || ''}
                         onChange={(e) => handleChange(e.target.value)}
                         placeholder={placeholder}
                         rows={3}
                         disabled={disabled}
+                        aria-describedby={error ? errorId : undefined}
+                        aria-invalid={error ? 'true' : undefined}
                         className={`
               w-full px-3 py-2 border rounded-lg
               text-slate-900 placeholder-slate-400
@@ -77,30 +95,39 @@ export default function DynamicField({ field, value, onChange, error, disabled =
             case 'select':
                 return (
                     <Select
-                        id={`field-${id}`}
+                        id={inputId}
                         value={value || ''}
                         onChange={(e) => handleChange(e.target.value)}
                         options={options}
                         placeholder={`Select ${label}`}
                         error={error}
                         disabled={disabled}
+                        aria-describedby={error ? errorId : undefined}
+                        aria-invalid={error ? 'true' : undefined}
                     />
                 );
 
             case 'checkbox':
                 return (
                     <Checkbox
-                        id={`field-${id}`}
+                        id={inputId}
                         checked={!!value}
                         onChange={(e) => handleChange(e.target.checked)}
                         label={label}
                         disabled={disabled}
+                        aria-describedby={error ? errorId : undefined}
+                        aria-invalid={error ? 'true' : undefined}
                     />
                 );
 
             case 'checkboxGroup':
                 return (
-                    <div className="flex flex-wrap gap-x-6 gap-y-3">
+                    <div
+                        role="group"
+                        aria-labelledby={groupLabelId}
+                        aria-describedby={error ? errorId : undefined}
+                        className="flex flex-wrap gap-x-6 gap-y-3"
+                    >
                         {options.map((opt) => {
                             const optValue = typeof opt === 'string' ? opt : opt.value;
                             const optLabel = typeof opt === 'string' ? opt : opt.label;
@@ -126,7 +153,12 @@ export default function DynamicField({ field, value, onChange, error, disabled =
 
             case 'radio':
                 return (
-                    <div className="flex flex-wrap gap-x-6 gap-y-3">
+                    <div
+                        role="radiogroup"
+                        aria-labelledby={groupLabelId}
+                        aria-describedby={error ? errorId : undefined}
+                        className="flex flex-wrap gap-x-6 gap-y-3"
+                    >
                         {options.map((opt) => {
                             const optValue = typeof opt === 'string' ? opt : opt.value;
                             const optLabel = typeof opt === 'string' ? opt : opt.label;
@@ -159,13 +191,15 @@ export default function DynamicField({ field, value, onChange, error, disabled =
         <div className="space-y-1">
             {/* Don't show label for checkbox type — it's built into the component */}
             {type !== 'checkbox' && (
-                <Label htmlFor={`field-${id}`} required={required}>
+                <Label id={groupLabelId} htmlFor={type === 'checkboxGroup' || type === 'radio' ? undefined : inputId} required={required}>
                     {label}
                 </Label>
             )}
             {renderField()}
             {error && (
-                <p className="text-xs text-danger mt-1">{error}</p>
+                <p id={errorId} role="alert" className="text-xs text-danger mt-1">
+                    {error}
+                </p>
             )}
         </div>
     );
