@@ -1,16 +1,47 @@
-# React + Vite
+# Event Registration System
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A dynamic, multi-tenant Event Registration System with secure forms, waiver signatures, waitlists, and PayPal integration. Built with React 19, Tailwind CSS v4, and Supabase.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Multi-Tenant Organizations:** Hosts multiple organizations; each can have completely isolated events and forms.
+- **Dynamic Form Engine:** Fully customizable fields (Text, Email, Phone, Checkbox, Radio, Textarea) with conditional logic rendering.
+- **Electronic Waivers:** E-signature capture (draw or type) with legally compliant IP and timestamp logging.
+- **Atomic Waitlist Management:** Database-level capacities with Supabase Edge Functions handling promotions automatically upon cancellations.
+- **Security & Bot Protection:** Cloudflare Turnstile CAPTCHA and Sentry Error Monitoring built-in.
+- **Payments:** Optional PayPal JS SDK integration for paid events.
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+- **Frontend:** React 19, Vite, Tailwind CSS v4
+- **Backend:** Supabase (Auth, Postgres, Edge Functions, Storage)
+- **UI Components:** Lucide React, dnd-kit (drag and drop builder), Signature Pad
+- **Testing:** Vitest & React Testing Library
 
-## Expanding the ESLint configuration
+## Quick Start
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+1. Clone the repository and install dependencies:
+   ```bash
+   npm install
+   ```
+2. Copy the `.env.example` file to `.env.local` and add your required Supabase keys:
+   ```bash
+   cp .env.example .env.local
+   # Edit .env.local to set your Supabase URL and Anon Key
+   ```
+3. Run the development server:
+   ```bash
+   npm run dev
+   ```
+
+## Production Deployment
+
+This project uses **Firebase Classic Hosting** for the frontend, configured to work seamlessly with React SPA routing.
+
+- Automated deployments are set up via **GitHub Actions** (`.github/workflows/ci.yml`).
+- Commits to the `main` branch are automatically linted, tested, built, and pushed to Firebase.
+- Required environment variables (Sentry, Supabase, Turnstile) should be added to your GitHub Repository Secrets.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
