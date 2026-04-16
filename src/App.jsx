@@ -47,8 +47,8 @@ function AppContent() {
       }
     }
 
-    // Admin mode — check for existing session first
-    if (params.get('admin') === 'true') {
+    // Admin mode — /admin path OR ?admin=true query param
+    if (path === '/admin' || path.startsWith('/admin/') || params.get('admin') === 'true') {
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session) {
           setView('admin-dashboard');
@@ -63,8 +63,12 @@ function AppContent() {
     const urlOrg = params.get('org');
     const urlEvent = params.get('event');
 
-    if (urlOrg) {
-      resolveOrg(urlOrg).then((resolvedOrg) => {
+    // Fall back to the default org when none is in the URL
+    const defaultOrg = import.meta.env.VITE_DEFAULT_ORG;
+    const effectiveOrg = urlOrg || defaultOrg || null;
+
+    if (effectiveOrg) {
+      resolveOrg(effectiveOrg).then((resolvedOrg) => {
         if (resolvedOrg) {
           setOrgId(resolvedOrg.id);
           setOrgName(resolvedOrg.name);
@@ -81,7 +85,7 @@ function AppContent() {
       return;
     }
 
-    // No org specified — show generic landing
+    // No org specified and no default configured — show generic landing
     setView('no-org');
   }, []);
 
