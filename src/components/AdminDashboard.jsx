@@ -23,7 +23,8 @@ export default function AdminDashboard() {
     const [orgs, setOrgs] = useState([]);
     const [events, setEvents] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [subView, setSubView] = useState(null); // 'editor', 'registrations', 'settings', 'create-org'
+    const [subView, setSubView] = useState(null);
+    const [dashboardError, setDashboardError] = useState(''); // 'editor', 'registrations', 'settings', 'create-org'
     const [selectedEventId, setSelectedEventId] = useState(null);
     const [shareEvent, setShareEvent] = useState(null);
 
@@ -130,7 +131,8 @@ export default function AdminDashboard() {
             // Realtime subscription will auto-add the new event to the list
         } catch (err) {
             console.error('Error duplicating event:', err);
-            alert('Failed to duplicate event');
+            setDashboardError('Failed to duplicate event: ' + (err.message || 'Unknown error'));
+            setTimeout(() => setDashboardError(''), 5000);
         }
     };
 
@@ -179,7 +181,8 @@ export default function AdminDashboard() {
                                         if (orgList.length >= 1) setCurrentOrg(orgList[0]);
                                     } catch (err) {
                                         console.error('Failed to join demo org:', err);
-                                        alert('Failed to join demo org. Make sure you\'ve run: npm run seed:demo');
+                                        setDashboardError('Failed to join demo org. Make sure you\'ve run: npm run seed:demo');
+                                        setTimeout(() => setDashboardError(''), 6000);
                                     } finally {
                                         setLoading(false);
                                     }
@@ -298,7 +301,8 @@ export default function AdminDashboard() {
             console.error('Error updating status:', err);
             // Revert on failure
             setEvents(previousEvents);
-            alert('Failed to update status');
+            setDashboardError('Failed to update event status. Please try again.');
+            setTimeout(() => setDashboardError(''), 4000);
         }
     };
 
@@ -308,6 +312,13 @@ export default function AdminDashboard() {
 
     return (
         <div className="space-y-6">
+            {/* Inline error toast */}
+            {dashboardError && (
+                <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+                    <span>{dashboardError}</span>
+                    <button onClick={() => setDashboardError('')} className="text-red-400 hover:text-red-600 shrink-0 cursor-pointer">✕</button>
+                </div>
+            )}
             {/* Top Bar */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">

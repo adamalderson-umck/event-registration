@@ -24,6 +24,7 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
     const [statusFilter, setStatusFilter] = useState('all');
     const [selectedReg, setSelectedReg] = useState(null);
     const [cancellingId, setCancellingId] = useState(null);
+    const [cancelError, setCancelError] = useState('');
 
     // Initial fetch + Realtime subscription
     useEffect(() => {
@@ -82,7 +83,8 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
             }
         } catch (err) {
             console.error('Failed to cancel registration:', err);
-            alert('Failed to cancel registration: ' + err.message);
+            setCancelError('Failed to cancel: ' + (err.message || 'Unknown error'));
+            setTimeout(() => setCancelError(''), 5000);
         } finally {
             setCancellingId(null);
         }
@@ -146,6 +148,12 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
     if (selectedReg) {
         return (
             <div className="space-y-4">
+                {cancelError && (
+                    <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+                        <span>{cancelError}</span>
+                        <button onClick={() => setCancelError('')} className="text-red-400 hover:text-red-600 shrink-0 cursor-pointer">✕</button>
+                    </div>
+                )}
                 <div className="flex items-center justify-between">
                     <Button variant="ghost" onClick={() => setSelectedReg(null)}>
                         <ArrowLeft className="w-4 h-4" /> Back to List

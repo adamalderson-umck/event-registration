@@ -27,13 +27,14 @@ export default function MemberManager() {
 
             const { data, error } = await supabase
                 .from('org_members')
-                .select('user_id, role')
+                .select('user_id, role, profiles(display_name, email)')
                 .eq('org_id', currentOrg.id);
 
             if (!error && data) {
                 setMembers(data.map((m) => ({
                     userId: m.user_id,
                     role: m.role,
+                    displayName: m.profiles?.display_name || m.profiles?.email || null,
                     isOwner: m.role === 'owner',
                     isSelf: m.user_id === user?.id,
                 })));
@@ -68,16 +69,17 @@ export default function MemberManager() {
                 setError('This user is already a member');
             } else if (status === 'added') {
                 // Re-fetch members
+                const { data: { user } } = await supabase.auth.getUser();
                 const { data: memberData } = await supabase
                     .from('org_members')
-                    .select('user_id, role')
+                    .select('user_id, role, profiles(display_name, email)')
                     .eq('org_id', currentOrg.id);
 
                 if (memberData) {
-                    const { data: { user } } = await supabase.auth.getUser();
                     setMembers(memberData.map((m) => ({
                         userId: m.user_id,
                         role: m.role,
+                        displayName: m.profiles?.display_name || m.profiles?.email || null,
                         isOwner: m.role === 'owner',
                         isSelf: m.user_id === user?.id,
                     })));
@@ -136,7 +138,7 @@ export default function MemberManager() {
 
             {/* Member List */}
             <div className="space-y-2 mb-6">
-                {members.map(({ userId, isOwner: memberIsOwner, isSelf }) => (
+                {members.map(({ userId, displayName, isOwner: memberIsOwner, isSelf }) => (
                     <div
                         key={userId}
                         className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
@@ -144,12 +146,12 @@ export default function MemberManager() {
                         <div className="flex items-center gap-2">
                             <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
                                 <span className="text-xs font-bold text-primary">
-                                    {userId.slice(0, 2).toUpperCase()}
+                                    {(displayName || userId).slice(0, 2).toUpperCase()}
                                 </span>
                             </div>
                             <div>
                                 <p className="text-sm font-medium text-slate-700">
-                                    {userId.slice(0, 12)}...
+                                    {displayName || <span className="font-mono text-xs text-slate-400">{userId.slice(0, 12)}…</span>}
                                     {isSelf && <span className="text-xs text-slate-400 ml-1">(you)</span>}
                                 </p>
                             </div>
