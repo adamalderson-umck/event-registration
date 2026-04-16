@@ -28,3 +28,10 @@ debug/
 
 # Firebase
 .firebase/
+
+# Scratch / agent artifacts
+patched_content.txt
+edge.json
+skills-lock.json
+scripts/
+.agents/
