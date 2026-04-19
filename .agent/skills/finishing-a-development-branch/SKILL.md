@@ -84,7 +84,9 @@ git merge <feature-branch>
 git branch -d <feature-branch>
 ```
 
-Then: Cleanup worktree (Step 5)
+Then: 
+1. **Log Technical Debt:** Generate a formal "Technical Debt Summary" of any bypassed structural debt from the Boy Scout rule and log it directly to `.agent/design/backlog.md`.
+2. Cleanup worktree (Step 5)
 
 #### Option 2: Push and Create PR
 
@@ -103,7 +105,9 @@ EOF
 )"
 ```
 
-Then: Cleanup worktree (Step 5)
+Then: 
+1. **Log Technical Debt:** Generate a formal "Technical Debt Summary" of any bypassed structural debt from the Boy Scout rule and log it directly to `.agent/design/backlog.md`.
+2. Cleanup worktree (Step 5)
 
 #### Option 3: Keep As-Is
 

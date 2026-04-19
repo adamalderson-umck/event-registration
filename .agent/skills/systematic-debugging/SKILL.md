@@ -51,7 +51,12 @@ You MUST complete each phase before proceeding to the next.
 
 **BEFORE attempting ANY fix:**
 
-1. **Read Error Messages Carefully**
+1. **Terminal Dumps Protocol (MANDATORY)**
+   - **Anytime a massive stack trace, Vitest dump, or CI failure happens:** You MUST pipe the output to a file, strip ASCII styling, and stash it in `/debug/LAST_FAILURE.txt` before reading it.
+   - Example: `npm test > temp.txt 2>&1`, clean the text, write to `/debug/LAST_FAILURE.txt`, and use `view_file` to read it. 
+   - This fully neutralizes PowerShell truncation issues.
+
+2. **Read Error Messages Carefully**
    - Don't skip past errors or warnings
    - They often contain the exact solution
    - Read stack traces completely
