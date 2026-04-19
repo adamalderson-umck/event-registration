@@ -17,9 +17,15 @@ Guide completion of development work by presenting clear options and handling ch
 
 ### Step 1: Verify Tests
 
-**Before presenting options, verify tests pass:**
+**Before presenting options, verify compilation, linting, AND tests pass:**
 
 ```bash
+# Run compilation
+npm run build / tsc --noEmit / cargo check
+
+# Run local linting rules (DO NOT SKIP)
+npm run lint
+
 # Run project's test suite
 npm test / cargo test / pytest / go test ./...
 ```
@@ -30,12 +36,12 @@ Tests failing (<N> failures). Must fix before completing:
 
 [Show failures]
 
-Cannot proceed with merge/PR until tests pass.
+Cannot proceed with merge/PR until ALL tests, compile checks, and linting pass.
 ```
 
-Stop. Don't proceed to Step 2.
+Stop. Don't proceed to Step 2. Do not offer options.
 
-**If tests pass:** Continue to Step 2.
+**If all checks pass:** Continue to Step 2.
 
 ### Step 2: Determine Base Branch
 
@@ -77,10 +83,10 @@ git pull
 # Merge feature branch
 git merge <feature-branch>
 
-# Verify tests on merged result
-<test command>
+# Verify tests, compilation, and linting on merged result
+<lint, build, and test commands>
 
-# If tests pass
+# If checks pass
 git branch -d <feature-branch>
 ```
 
@@ -164,9 +170,9 @@ git worktree remove <worktree-path>
 
 ## Common Mistakes
 
-**Skipping test verification**
-- **Problem:** Merge broken code, create failing PR
-- **Fix:** Always verify tests before offering options
+**Skipping test/lint verification**
+- **Problem:** Merge broken code, syntax errors, create failing PR
+- **Fix:** Always verify compiling, linting, and tests before offering options
 
 **Open-ended questions**
 - **Problem:** "What should I do next?" → ambiguous
@@ -189,7 +195,7 @@ git worktree remove <worktree-path>
 - Force-push without explicit request
 
 **Always:**
-- Verify tests before offering options
+- Verify tests, compilation, and linter zero-exits before offering options
 - Present exactly 4 options
 - Get typed confirmation for Option 4
 - Clean up worktree for Options 1 & 4 only
