@@ -11,6 +11,7 @@ import HeaderImageUpload from './HeaderImageUpload';
 import ThemePicker from './ThemePicker';
 import { sha256 } from '../utils/hashContent';
 import { useOrg } from '../context/useOrg';
+import { toSlug, isValidSlug } from '../utils/slugUtils';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Label from './ui/Label';
@@ -51,6 +52,7 @@ export default function EventEditor({ orgId, eventId, onBack }) {
 
     const [event, setEvent] = useState({
         title: '',
+        slug: '',
         description: '',
         location: '',
         startDate: '',
@@ -105,6 +107,7 @@ export default function EventEditor({ orgId, eventId, onBack }) {
 
                     setEvent({
                         title: data.title || '',
+                        slug: data.slug || '',
                         description: data.description || '',
                         location: data.location || '',
                         startDate: data.start_date ? data.start_date.slice(0, 16) : '',
@@ -165,7 +168,14 @@ export default function EventEditor({ orgId, eventId, onBack }) {
     }, []);
 
     const handleChange = (key, value) => {
-        setEvent((prev) => ({ ...prev, [key]: value }));
+        setEvent((prev) => {
+            const update = { ...prev, [key]: value };
+            if (key === 'title' && prev.slug === '') {
+                // Auto-fill slug from title only while slug is untouched
+                update.slug = toSlug(value);
+            }
+            return update;
+        });
         setSaved(false);
     };
 
@@ -198,12 +208,18 @@ export default function EventEditor({ orgId, eventId, onBack }) {
             return;
         }
 
+        if (event.slug.trim() && !isValidSlug(event.slug.trim())) {
+            setError('Invalid slug format. Use lowercase letters, numbers, and hyphens (3–80 chars).');
+            return;
+        }
+
         setSaving(true);
         setError('');
 
         try {
             const eventData = {
                 title: event.title.trim(),
+                slug: event.slug.trim() || null,
                 description: event.description.trim(),
                 location: event.location.trim(),
                 start_date: event.startDate || null,
@@ -311,7 +327,10 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                     {eventId && (
                         <Button
                             variant="secondary"
-                            onClick={() => window.open(`${window.location.origin}/?org=${orgId}&event=${eventId}`, '_blank')}
+                            onClick={() => {
+                                const eventParam = event.slug || eventId;
+                                window.open(`${window.location.origin}/?org=${orgId}&event=${eventParam}`, '_blank');
+                            }}
                             type="button"
                         >
                             <ExternalLink className="w-4 h-4" /> Preview
@@ -340,6 +359,26 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                     <div>
                         <Label htmlFor="event-title" required>Event Title</Label>
                         <Input id="event-title" value={event.title} onChange={(e) => handleChange('title', e.target.value)} placeholder="e.g. VBS 2026" />
+                    </div>
+                    <div>
+                        <Label htmlFor="event-slug">
+                            URL Slug <span className="text-slate-400 font-normal text-xs">(optional)</span>
+                        </Label>
+                        <p className="text-xs text-slate-400 mb-1">
+                            Appears in your share link: <span className="font-mono">?event=</span>
+                            <span className="font-mono text-primary">{event.slug || '<uuid>'}</span>
+                        </p>
+                        <Input
+                            id="event-slug"
+                            value={event.slug}
+                            onChange={(e) => handleChange('slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                            placeholder="e.g. vbs-2026"
+                        />
+                        {event.slug && !isValidSlug(event.slug) && (
+                            <p className="text-xs text-danger mt-1">
+                                Slug must be 3–80 characters: lowercase letters, numbers, and hyphens only.
+                            </p>
+                        )}
                     </div>
                     <div>
                         <Label htmlFor="event-desc">Description</Label>

@@ -73,8 +73,13 @@ function AppContent() {
           setOrgId(resolvedOrg.id);
           setOrgName(resolvedOrg.name);
           if (urlEvent) {
-            setEventId(urlEvent);
-            setView('form');
+            const resolvedEventId = await resolveEvent(resolvedOrg.id, urlEvent);
+            if (resolvedEventId) {
+              setEventId(resolvedEventId);
+              setView('form');
+            } else {
+              setView('not-found');
+            }
           } else {
             setView('landing');
           }
@@ -130,6 +135,33 @@ function AppContent() {
       return orgById || null;
     } catch (err) {
       console.error('Error resolving org:', err);
+      return null;
+    }
+  };
+
+  const resolveEvent = async (orgId, slugOrId) => {
+    try {
+      // Try by slug first
+      const { data: bySlug } = await supabase
+        .from('events')
+        .select('id')
+        .eq('org_id', orgId)
+        .eq('slug', slugOrId)
+        .maybeSingle();
+
+      if (bySlug) return bySlug.id;
+
+      // Fall back to UUID
+      const { data: byId } = await supabase
+        .from('events')
+        .select('id')
+        .eq('org_id', orgId)
+        .eq('id', slugOrId)
+        .maybeSingle();
+
+      return byId?.id || null;
+    } catch (err) {
+      console.error('Error resolving event:', err);
       return null;
     }
   };
