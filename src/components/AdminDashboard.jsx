@@ -116,7 +116,7 @@ export default function AdminDashboard() {
 
     const handleDuplicate = async (sourceEvent) => {
         try {
-            const { id: _id, created_at: _ca, updated_at: _ua, registration_count: _rc, waitlist_count: _wc, reminder_sent_at: _rs, ...rest } = sourceEvent;
+            const { id: _id, created_at: _ca, updated_at: _ua, registration_count: _rc, waitlist_count: _wc, reminder_sent_at: _rs, slug: _slug, ...rest } = sourceEvent;
             const newEvent = {
                 ...rest,
                 title: `${sourceEvent.title} (Copy)`,
@@ -307,7 +307,9 @@ export default function AdminDashboard() {
     };
 
     const getPreviewUrl = (eventId) => {
-        return `${window.location.origin}/?org=${currentOrg.id}&event=${eventId}`;
+        const ev = events.find((e) => e.id === eventId);
+        const eventParam = ev?.slug || eventId;
+        return `${window.location.origin}/?org=${currentOrg.id}&event=${eventParam}`;
     };
 
     return (

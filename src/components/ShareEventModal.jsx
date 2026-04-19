@@ -10,7 +10,8 @@ export default function ShareEventModal({ event, orgId, onClose }) {
 
   // Build the public registration URL
   const baseUrl = window.location.origin;
-  const eventUrl = `${baseUrl}/?org=${orgId}&event=${event.id}`;
+  const eventParam = event.slug || event.id;
+  const eventUrl = `${baseUrl}/?org=${orgId}&event=${eventParam}`;
 
   useEffect(() => {
     if (canvasRef.current) {
