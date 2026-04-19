@@ -68,7 +68,7 @@ function AppContent() {
     const effectiveOrg = urlOrg || defaultOrg || null;
 
     if (effectiveOrg) {
-      resolveOrg(effectiveOrg).then((resolvedOrg) => {
+      resolveOrg(effectiveOrg).then(async (resolvedOrg) => {
         if (resolvedOrg) {
           setOrgId(resolvedOrg.id);
           setOrgName(resolvedOrg.name);
