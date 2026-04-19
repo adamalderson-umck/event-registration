@@ -87,6 +87,7 @@ function setupMocks(eventData = makeEvent(), insertError = null) {
 describe('EventRegistrationForm', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubEnv('VITE_TURNSTILE_SITE_KEY', ''); // Disable CAPTCHA for JSDOM
     });
 
     it('renders form fields after loading event', async () => {

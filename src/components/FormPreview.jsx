@@ -89,13 +89,13 @@ export default function FormPreview({
                         alt={event.title}
                         className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/30 to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 px-6 py-6 text-white">
+                    <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/60 to-transparent" />
+                    <div className="absolute bottom-0 left-0 right-0 px-6 py-6 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                         <h1 className="text-2xl font-bold mb-2">{event.title || 'Untitled Event'}</h1>
                         {event.description && (
-                            <p className="text-white/80 text-sm mb-4">{event.description}</p>
+                            <p className="text-white/90 text-sm mb-4 leading-relaxed">{event.description}</p>
                         )}
-                        <div className="flex flex-wrap gap-4 text-sm text-white/70">
+                        <div className="flex flex-wrap gap-4 text-sm text-white/90 font-medium">
                             {event.start_date && (
                                 <span className="flex items-center gap-1">
                                     <CalendarDays className="w-4 h-4" />
