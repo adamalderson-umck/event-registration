@@ -90,12 +90,12 @@ export default function FormPreview({
                         className="w-full h-full object-cover"
                     />
                     <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/60 to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 px-6 py-6 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
-                        <h1 className="text-2xl font-bold mb-2">{event.title || 'Untitled Event'}</h1>
+                    <div className="absolute bottom-0 left-0 right-0 p-4 sm:px-6 sm:py-6 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                        <h1 className="text-xl sm:text-2xl font-bold mb-1 sm:mb-2 leading-tight">{event.title || 'Untitled Event'}</h1>
                         {event.description && (
-                            <p className="text-white/90 text-sm mb-4 leading-relaxed">{event.description}</p>
+                            <p className="text-white/90 text-xs sm:text-sm mb-3 sm:mb-4 leading-relaxed line-clamp-2 md:line-clamp-4">{event.description}</p>
                         )}
-                        <div className="flex flex-wrap gap-4 text-sm text-white/90 font-medium">
+                        <div className="flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm text-white/90 font-medium">
                             {event.start_date && (
                                 <span className="flex items-center gap-1">
                                     <CalendarDays className="w-4 h-4" />
@@ -124,16 +124,16 @@ export default function FormPreview({
                 </div>
             ) : (
                 <div
-                    className="px-6 py-8 text-white"
+                    className="p-5 sm:px-6 sm:py-8 text-white"
                     style={{
                         background: `linear-gradient(to right, ${theme.primary}, ${theme.accent})`,
                     }}
                 >
-                    <h1 className="text-2xl font-bold mb-2">{event.title || 'Untitled Event'}</h1>
+                    <h1 className="text-xl sm:text-2xl font-bold mb-1 sm:mb-2 leading-tight">{event.title || 'Untitled Event'}</h1>
                     {event.description && (
-                        <p className="text-white/80 text-sm mb-4">{event.description}</p>
+                        <p className="text-white/90 text-xs sm:text-sm mb-3 sm:mb-4 leading-relaxed line-clamp-2 md:line-clamp-4">{event.description}</p>
                     )}
-                    <div className="flex flex-wrap gap-4 text-sm text-white/70">
+                    <div className="flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm text-white/90 font-medium">
                         {event.start_date && (
                             <span className="flex items-center gap-1">
                                 <CalendarDays className="w-4 h-4" />
