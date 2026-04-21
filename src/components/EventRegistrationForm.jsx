@@ -107,7 +107,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         return () => {
             if (script) script.removeEventListener('load', tryMount);
         };
-    }, [TURNSTILE_SITE_KEY, mountTurnstile]);
+    }, [TURNSTILE_SITE_KEY, mountTurnstile, currentPage]);
 
     // --- Multi-page and condition helpers ---
     const pages = event ? splitIntoPages(event.form_fields || []) : [];
