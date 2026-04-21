@@ -198,8 +198,8 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
                         ))}
                     </div>
 
-                    {/* Waiver Signature */}
-                    {selectedReg.signature_record?.signed && (
+                    {/* Waiver Signatures */}
+                    {Array.isArray(selectedReg.signature_records) && selectedReg.signature_records.length > 0 && (
                         <div className="mt-4">
                             <SignatureViewer registration={selectedReg} event={event} />
                         </div>
