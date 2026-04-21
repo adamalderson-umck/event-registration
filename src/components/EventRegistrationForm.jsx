@@ -223,7 +223,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
 
         // Clear any stale errors before showing the next page
         setErrors({});
-        setWaiverErrors({});
+        setSignaturesErrors({});
 
         // Guard against accidental submit from Next→Submit button swap at same DOM position
         justNavigated.current = true;
@@ -241,7 +241,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
     const handleBack = () => {
         // Clear errors when going back so the previous page starts clean
         setErrors({});
-        setWaiverErrors({});
+        setSignaturesErrors({});
 
         let prevPage = currentPage - 1;
         while (prevPage > 0) {
