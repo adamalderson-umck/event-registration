@@ -18,14 +18,9 @@ export default function EventRegistrationForm({ eventId, orgId }) {
     const [isWaitlisted, setIsWaitlisted] = useState(false);
     const [fetchError, setFetchError] = useState('');
     const [currentPage, setCurrentPage] = useState(0);
-    const [waiverData, setWaiverData] = useState({
-        consentToESign: false,
-        signerName: '',
-        signatureMethod: 'draw',
-        signatureData: null,
-        signatureFont: null,
-    });
-    const [waiverErrors, setWaiverErrors] = useState({});
+    // Map of waiverID → per-waiver signature state
+    const [signaturesMap, setSignaturesMap] = useState({});
+    const [signaturesErrors, setSignaturesErrors] = useState({});
     const [turnstileToken, setTurnstileToken] = useState(null);
     const turnstileRef = useRef(null);
     const turnstileWidgetId = useRef(null);
@@ -180,22 +175,43 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         }
 
         // Waiver validation — only on final submit (fieldsToValidate is null)
-        const newWaiverErrors = {};
-        if (!fieldsToValidate && event?.waiver_enabled) {
-            if (!waiverData.consentToESign) {
-                newErrors._waiver_consent = 'consent';
-                newWaiverErrors.consentToESign = 'You must agree to sign electronically';
-            }
-            if (!waiverData.signerName?.trim()) {
-                newErrors._waiver_name = 'name';
-                newWaiverErrors.signerName = 'Full legal name is required';
-            }
-            if (waiverData.signatureMethod === 'draw' && !waiverData.signatureData) {
-                newErrors._waiver_sig = 'signature';
-                newWaiverErrors.signature = 'Please draw your signature';
+        const newSigErrors = {};
+        if (!fieldsToValidate && Array.isArray(event?.waivers)) {
+            for (const waiver of event.waivers) {
+                const sig = signaturesMap[waiver.id] || {};
+                const wErr = {};
+                if (sig.declined) continue; // explicit decline is valid for optional
+                if (waiver.required !== false) {
+                    // Required: must sign
+                    if (!sig.consentToESign) {
+                        newErrors[`_waiver_consent_${waiver.id}`] = 'consent';
+                        wErr.consentToESign = 'You must agree to sign electronically';
+                    }
+                    if (!sig.signerName?.trim()) {
+                        newErrors[`_waiver_name_${waiver.id}`] = 'name';
+                        wErr.signerName = 'Full legal name is required';
+                    }
+                    if (sig.signatureMethod === 'draw' && !sig.signatureData) {
+                        newErrors[`_waiver_sig_${waiver.id}`] = 'signature';
+                        wErr.signature = 'Please draw your signature';
+                    }
+                } else if (!sig.declined) {
+                    // Optional but not declined — treat as attempting to sign
+                    if (sig.consentToESign) {
+                        if (!sig.signerName?.trim()) {
+                            newErrors[`_waiver_name_${waiver.id}`] = 'name';
+                            wErr.signerName = 'Full legal name is required';
+                        }
+                        if (sig.signatureMethod === 'draw' && !sig.signatureData) {
+                            newErrors[`_waiver_sig_${waiver.id}`] = 'signature';
+                            wErr.signature = 'Please draw your signature';
+                        }
+                    }
+                }
+                if (Object.keys(wErr).length > 0) newSigErrors[waiver.id] = wErr;
             }
         }
-        setWaiverErrors(fieldsToValidate ? {} : newWaiverErrors);
+        setSignaturesErrors(fieldsToValidate ? {} : newSigErrors);
 
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
@@ -272,36 +288,48 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 payment_method: null,
             };
 
-            // Add signature record if waiver is enabled
-            if (event.waiver_enabled) {
+            // Build signature_records[] for all waivers
+            if (Array.isArray(event.waivers) && event.waivers.length > 0) {
                 let ipAddress = 'unknown';
                 try {
                     const response = await supabase.functions.invoke('capture-signer-ip');
-                    if (response.data?.ip) {
-                        ipAddress = response.data.ip;
-                    }
+                    if (response.data?.ip) ipAddress = response.data.ip;
                 } catch (err) {
                     console.warn('Could not capture IP:', err);
                 }
 
-                registrationData.signature_record = {
-                    signed: true,
-                    signedAt: new Date().toISOString(),
-                    signerName: waiverData.signerName.trim(),
-                    signerEmail: findRegistrantEmail(event.form_fields, formData),
-                    signatureMethod: waiverData.signatureMethod,
-                    signatureData: waiverData.signatureMethod === 'draw'
-                        ? waiverData.signatureData
-                        : null,
-                    signatureFont: waiverData.signatureMethod === 'type'
-                        ? waiverData.signatureFont
-                        : null,
-                    waiverTitle: event.waiver_title || '',
-                    waiverContentHash: event.waiver_content_hash || '',
-                    ipAddress,
-                    userAgent: navigator.userAgent,
-                    consentToESign: true,
-                };
+                registrationData.signature_records = event.waivers.map((waiver) => {
+                    const sig = signaturesMap[waiver.id] || {};
+                    if (sig.declined) {
+                        return {
+                            waiverId: waiver.id,
+                            waiverTitle: waiver.title,
+                            waiverContentHash: waiver.contentHash || '',
+                            signed: false,
+                            declined: true,
+                            declinedAt: new Date().toISOString(),
+                            signerName: sig.signerName?.trim() || '',
+                            signerEmail: findRegistrantEmail(event.form_fields, formData),
+                            ipAddress,
+                            userAgent: navigator.userAgent,
+                        };
+                    }
+                    return {
+                        waiverId: waiver.id,
+                        waiverTitle: waiver.title,
+                        waiverContentHash: waiver.contentHash || '',
+                        signed: true,
+                        signedAt: new Date().toISOString(),
+                        signerName: sig.signerName?.trim() || '',
+                        signerEmail: findRegistrantEmail(event.form_fields, formData),
+                        signatureMethod: sig.signatureMethod || 'draw',
+                        signatureData: sig.signatureMethod === 'draw' ? sig.signatureData : null,
+                        signatureFont: sig.signatureMethod === 'type' ? sig.signatureFont : null,
+                        consentToESign: true,
+                        ipAddress,
+                        userAgent: navigator.userAgent,
+                    };
+                });
             }
 
             const { error: insertError } = await supabase
@@ -328,14 +356,8 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         setSubmitted(false);
         setIsWaitlisted(false);
         setCurrentPage(0);
-        setWaiverData({
-            consentToESign: false,
-            signerName: '',
-            signatureMethod: 'draw',
-            signatureData: null,
-            signatureFont: null,
-        });
-        setWaiverErrors({});
+        setSignaturesMap({});
+        setSignaturesErrors({});
     };
 
     // Loading state
@@ -404,17 +426,25 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                         : null
                 }
                 waiverSlot={
-                    event.waiver_enabled
+                    Array.isArray(event.waivers) && event.waivers.length > 0
                         ? (
-                            <WaiverSignatureStep
-                                waiver={event}
-                                value={waiverData}
-                                onChange={(data) => {
-                                    setWaiverData(data);
-                                    setWaiverErrors({});
-                                }}
-                                errors={waiverErrors}
-                            />
+                            <div className="space-y-6">
+                                {event.waivers
+                                    .slice()
+                                    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                                    .map((waiver) => (
+                                        <WaiverSignatureStep
+                                            key={waiver.id}
+                                            waiver={waiver}
+                                            value={signaturesMap[waiver.id] || {}}
+                                            onChange={(data) => {
+                                                setSignaturesMap((prev) => ({ ...prev, [waiver.id]: data }));
+                                                setSignaturesErrors((prev) => { const next = { ...prev }; delete next[waiver.id]; return next; });
+                                            }}
+                                            errors={signaturesErrors[waiver.id] || {}}
+                                        />
+                                    ))}
+                            </div>
                         )
                         : null
                 }

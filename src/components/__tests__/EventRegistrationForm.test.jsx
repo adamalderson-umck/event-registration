@@ -37,6 +37,21 @@ vi.mock('../../services/supabase', () => {
     };
 });
 
+// Stub SignaturePad — JSDOM doesn't support HTMLCanvasElement
+vi.mock('../SignaturePad', () => ({
+    default: ({ onChange }) => (
+        <canvas
+            data-testid="signature-pad"
+            onClick={() => onChange('mock-sig-data')}
+        />
+    ),
+}));
+
+// Stub WaiverEditor (rich text) — not needed for form submission tests
+vi.mock('../WaiverEditor', () => ({
+    default: ({ content }) => <div data-testid="waiver-editor">{content}</div>,
+}));
+
 // Import AFTER mock is registered
 import EventRegistrationForm from '../EventRegistrationForm';
 import { supabase } from '../../services/supabase';
@@ -54,7 +69,7 @@ function makeEvent(overrides = {}) {
         waitlist_enabled: false,
         waitlist_count: 0,
         payment_enabled: false,
-        waiver_enabled: false,
+        waivers: [],
         form_fields: [
             { id: 'system_first_name', type: 'text', label: 'First Name', required: true },
             { id: 'system_last_name', type: 'text', label: 'Last Name', required: true },
@@ -189,5 +204,46 @@ describe('EventRegistrationForm', () => {
         render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
         // Form still renders — waitlist join path
         expect(await screen.findByLabelText(/first name/i)).toBeInTheDocument();
+    });
+
+    it('submits signature_records[] for multi-waiver events', async () => {
+        const waivers = [
+            { id: 'w1', title: 'Liability Waiver', content: '<p>Liability</p>', contentHash: 'h1', required: true, order: 0 },
+            { id: 'w2', title: 'Media Release', content: '<p>Media</p>', contentHash: 'h2', required: false, order: 1 },
+        ];
+        setupMocks(makeEvent({ waivers }));
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        // Fill standard fields
+        await userEvent.type(await screen.findByLabelText(/first name/i), 'Alice');
+        await userEvent.type(screen.getByLabelText(/last name/i), 'Smith');
+        await userEvent.type(screen.getByLabelText(/email/i), 'alice@example.com');
+
+        // Waiver 1 (required) — consent checkbox then signer name then draw sig
+        const checkboxes = await screen.findAllByRole('checkbox', { name: /agree to sign/i });
+        fireEvent.click(checkboxes[0]);
+
+        // Fill the signer name input for w1 (enabled after consent)
+        const nameInputs = await screen.findAllByLabelText(/full legal name/i);
+        await userEvent.type(nameInputs[0], 'Alice Smith');
+
+        // Click the stubbed SignaturePad canvas so onChange('mock-sig-data') fires
+        const pads = screen.getAllByTestId('signature-pad');
+        fireEvent.click(pads[0]);
+
+        // Waiver 2 (optional) — decline via radio
+        const declineRadios = await screen.findAllByRole('radio', { name: /i decline/i });
+        fireEvent.click(declineRadios[0]);
+
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+
+        await waitFor(() => {
+            const call = supabase._mocks.mockInsert.mock.calls[0]?.[0];
+            expect(call).toBeDefined();
+            expect(Array.isArray(call.signature_records)).toBe(true);
+            expect(call.signature_records).toHaveLength(2);
+            const rec2 = call.signature_records.find((r) => r.waiverId === 'w2');
+            expect(rec2?.declined).toBe(true);
+        });
     });
 });
