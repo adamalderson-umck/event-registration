@@ -47,7 +47,7 @@ const baseEvent = {
     ],
     theme: null,
     header_image_url: null,
-    waiver_enabled: false,
+    waivers: [],
     capacity: null,
     registration_count: 0,
     waitlist_enabled: false,
@@ -129,10 +129,12 @@ describe('FormPreview', () => {
         expect(screen.getByText(/Submit Registration/)).toBeInTheDocument();
     });
 
-    it('shows waiver placeholder in readOnly mode when waiver is enabled', () => {
+    it('shows waiver placeholder in readOnly mode when waivers are configured', () => {
         const waiverEvent = {
             ...baseEvent,
-            waiver_enabled: true,
+            waivers: [
+                { id: 'w1', title: 'Liability Waiver', content: '<p>Terms</p>', required: true, order: 0 },
+            ],
         };
         render(<FormPreview event={waiverEvent} readOnly={true} />);
         expect(screen.getByText(/Waiver.*section will appear here/i)).toBeInTheDocument();

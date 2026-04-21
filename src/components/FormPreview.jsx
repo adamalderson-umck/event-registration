@@ -217,7 +217,7 @@ export default function FormPreview({
                     {isLastPage && captchaSlot}
 
                     {/* Waiver placeholder in read-only mode */}
-                    {isLastPage && readOnly && event.waiver_enabled && !waiverSlot && (
+                    {isLastPage && readOnly && Array.isArray(event.waivers) && event.waivers.length > 0 && !waiverSlot && (
                         <div className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center text-sm text-slate-400">
                             Waiver / E-Signature section will appear here
                         </div>
