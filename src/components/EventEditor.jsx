@@ -71,11 +71,7 @@ export default function EventEditor({ orgId, eventId, onBack }) {
             digestDay: 'monday',
         },
         reminderHoursBefore: '',
-        waiver: {
-            enabled: false,
-            title: '',
-            content: '',
-        },
+        waivers: [],
         headerImageUrl: currentOrg?.default_header_image_url || null,
         theme: null,
     });
@@ -128,11 +124,7 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                             digestDay: data.notifications?.digestDay || 'monday',
                         },
                         reminderHoursBefore: data.reminder_hours_before != null ? String(data.reminder_hours_before) : '',
-                        waiver: {
-                            enabled: !!data.waiver_enabled,
-                            title: data.waiver_title || '',
-                            content: data.waiver_content || '',
-                        },
+                        waivers: Array.isArray(data.waivers) ? data.waivers : [],
                         headerImageUrl: data.header_image_url || null,
                         theme: data.theme || null,
                     });
@@ -238,12 +230,14 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                     digestDay: event.notifications.digestDay,
                 },
                 reminder_hours_before: event.reminderHoursBefore ? parseInt(event.reminderHoursBefore) : null,
-                waiver_enabled: event.waiver.enabled,
-                waiver_title: event.waiver.enabled ? event.waiver.title.trim() : '',
-                waiver_content: event.waiver.enabled ? event.waiver.content : '',
-                waiver_content_hash: event.waiver.enabled
-                    ? await sha256(event.waiver.content)
-                    : '',
+                waivers: await Promise.all(
+                    event.waivers.map(async (w, i) => ({
+                        ...w,
+                        title: w.title.trim(),
+                        contentHash: await sha256(w.content || ''),
+                        order: i,
+                    }))
+                ),
                 header_image_url: event.headerImageUrl,
                 theme: event.theme,
                 org_id: orgId,
@@ -567,8 +561,8 @@ export default function EventEditor({ orgId, eventId, onBack }) {
 
             {/* Waiver / E-Sign */}
             <WaiverSection
-                waiver={event.waiver}
-                onChange={(waiver) => handleChange('waiver', waiver)}
+                waivers={event.waivers}
+                onChange={(waivers) => handleChange('waivers', waivers)}
             />
 
             {/* Form Field Builder */}
