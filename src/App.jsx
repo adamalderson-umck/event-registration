@@ -61,7 +61,13 @@ function AppContent() {
 
     // Public: org + event
     const urlOrg = params.get('org');
-    const urlEvent = params.get('event');
+
+    // Event slug from clean pathname (e.g. /summer-camp-2026) —
+    // fall back to legacy ?event= query param so old links keep working.
+    const pathSegment = path.replace(/^\//, '').trim();
+    const reservedPaths = ['admin', 'cancel', ''];
+    const pathSlug = !reservedPaths.includes(pathSegment) ? pathSegment : null;
+    const urlEvent = pathSlug || params.get('event') || null;
 
     // Fall back to the default org when none is in the URL
     const defaultOrg = import.meta.env.VITE_DEFAULT_ORG;
@@ -76,6 +82,10 @@ function AppContent() {
             const resolvedEventId = await resolveEvent(resolvedOrg.id, urlEvent);
             if (resolvedEventId) {
               setEventId(resolvedEventId);
+              // Canonicalise old ?event= links to the clean path on first load
+              if (!pathSlug && params.get('event')) {
+                window.history.replaceState({}, '', `/${urlEvent}`);
+              }
               setView('form');
             } else {
               setView('not-found');
@@ -169,18 +179,14 @@ function AppContent() {
   const handleSelectEvent = (event) => {
     setEventId(event.id);
     setView('form');
-    // Update URL without reload
-    const params = new URLSearchParams(window.location.search);
-    params.set('event', event.id);
-    window.history.pushState({}, '', `?${params.toString()}`);
+    // Use clean slug path; fall back to id if slug is somehow absent
+    window.history.pushState({}, '', `/${event.slug || event.id}`);
   };
 
   const handleBackToLanding = () => {
     setEventId(null);
     setView('landing');
-    const params = new URLSearchParams(window.location.search);
-    params.delete('event');
-    window.history.pushState({}, '', `?${params.toString()}`);
+    window.history.pushState({}, '', '/');
   };
 
   const renderContent = () => {
