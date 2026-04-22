@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../services/supabase';
 import {
     ArrowLeft, Search, Printer, FileText, ClipboardList,
-    BarChart3, Users, Loader2, X, Eye, Download, XCircle
+    BarChart3, Users, Loader2, X, Eye, Download, XCircle, Upload
 } from 'lucide-react';
 import {
     printIndividualRegistration,
@@ -16,6 +16,8 @@ import Input from './ui/Input';
 import Select from './ui/Select';
 import SignatureViewer from './SignatureViewer';
 import { downloadCsv } from '../utils/exportCsv';
+import { processCsvFile } from '../utils/importCsv';
+import { useRef } from 'react';
 
 export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
     const [registrations, setRegistrations] = useState([]);
@@ -25,6 +27,14 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
     const [selectedReg, setSelectedReg] = useState(null);
     const [cancellingId, setCancellingId] = useState(null);
     const [cancelError, setCancelError] = useState('');
+
+    // Import states
+    const fileInputRef = useRef(null);
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [importData, setImportData] = useState(null);
+    const [importMappings, setImportMappings] = useState({});
+    const [importing, setImporting] = useState(false);
+    const [importError, setImportError] = useState('');
 
     // Initial fetch + Realtime subscription
     useEffect(() => {
@@ -87,6 +97,66 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
             setTimeout(() => setCancelError(''), 5000);
         } finally {
             setCancellingId(null);
+        }
+    };
+
+    const handleFileSelect = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            setImportError('');
+            const result = await processCsvFile(file, formFields);
+            setImportData(result);
+            setImportMappings(result.inferredMappings);
+            setShowImportModal(true);
+        } catch (err) {
+            setImportError('Failed to parse CSV: ' + err.message);
+        }
+        
+        // Reset input
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const handleImportConfirm = async () => {
+        setImporting(true);
+        setImportError('');
+
+        try {
+            const { headers, dataRows } = importData;
+            
+            const newRegistrations = dataRows.map(row => {
+                const formData = {};
+                headers.forEach((_, index) => {
+                    const mappedFieldId = importMappings[index];
+                    if (mappedFieldId) {
+                        formData[mappedFieldId] = row[index] || '';
+                    }
+                });
+
+                return {
+                    org_id: orgId,
+                    event_id: eventId,
+                    status: 'confirmed',
+                    form_data: formData,
+                    signature_records: [],
+                };
+            });
+
+            const { error } = await supabase
+                .from('registrations')
+                .insert(newRegistrations);
+
+            if (error) throw error;
+
+            setShowImportModal(false);
+            setImportData(null);
+            setImportMappings({});
+        } catch (err) {
+            console.error('Import failed:', err);
+            setImportError('Failed to import: ' + err.message);
+        } finally {
+            setImporting(false);
         }
     };
     const formFields = useMemo(() => event?.form_fields || [], [event?.form_fields]);
@@ -266,6 +336,16 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
 
                 {/* Print Buttons */}
                 <div className="flex gap-2 ml-auto">
+                    <input
+                        type="file"
+                        accept=".csv"
+                        className="hidden"
+                        ref={fileInputRef}
+                        onChange={handleFileSelect}
+                    />
+                    <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()} title="Import CSV">
+                        <Upload className="w-4 h-4" /> Import
+                    </Button>
                     <Button variant="secondary" size="sm" onClick={() => downloadCsv(
                         filtered,
                         formFields,
@@ -335,6 +415,64 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
                         </table>
                     </div>
                 </Card>
+            )}
+
+            {/* Import Mapping Modal */}
+            {showImportModal && importData && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50">
+                    <Card className="w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
+                        <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+                            <h3 className="text-xl font-bold text-slate-900">Map CSV Columns</h3>
+                            <button
+                                onClick={() => setShowImportModal(false)}
+                                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
+                        <div className="p-6 overflow-y-auto flex-1">
+                            {importError && (
+                                <div className="mb-4 bg-red-50 text-red-700 p-3 rounded-md text-sm border border-red-200">
+                                    {importError}
+                                </div>
+                            )}
+                            <p className="text-sm text-slate-600 mb-6">
+                                We found <strong>{importData.dataRows.length}</strong> rows. 
+                                Please confirm how the CSV columns map to your event's form fields.
+                            </p>
+
+                            <div className="space-y-4">
+                                {importData.headers.map((header, index) => (
+                                    <div key={index} className="grid grid-cols-2 gap-4 items-center bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                        <div className="flex flex-col">
+                                            <span className="text-xs text-slate-500 font-medium uppercase tracking-wide">CSV Column</span>
+                                            <span className="font-semibold text-slate-900 truncate" title={header}>{header || '(Empty Column Name)'}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-xs text-slate-500 font-medium uppercase tracking-wide block mb-1">Maps To Form Field</span>
+                                            <Select
+                                                value={importMappings[index] || ''}
+                                                onChange={(e) => setImportMappings(prev => ({ ...prev, [index]: e.target.value }))}
+                                                options={[
+                                                    { value: '', label: '-- Ignore this column --' },
+                                                    ...formFields.map(f => ({ value: f.id, label: f.label }))
+                                                ]}
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-slate-100 bg-slate-50 shrink-0 flex justify-end gap-3">
+                            <Button variant="ghost" onClick={() => setShowImportModal(false)} disabled={importing}>
+                                Cancel
+                            </Button>
+                            <Button variant="primary" onClick={handleImportConfirm} loading={importing}>
+                                Import {importData.dataRows.length} Registrations
+                            </Button>
+                        </div>
+                    </Card>
+                </div>
             )}
         </div>
     );

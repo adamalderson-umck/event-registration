@@ -8,12 +8,14 @@ import Label from './ui/Label';
 import Card from './ui/Card';
 import MemberManager from './MemberManager';
 import HeaderImageUpload from './HeaderImageUpload';
+import ThemePicker from './ThemePicker';
 
 export default function OrgSettings({ onBack }) {
     const { currentOrg, setCurrentOrg } = useOrg();
     const [form, setForm] = useState({
         name: currentOrg?.name || '',
         default_header_image_url: currentOrg?.default_header_image_url || '',
+        default_theme: currentOrg?.default_theme || null,
         smtpHost: currentOrg?.smtp_config?.host || '',
         smtpPort: String(currentOrg?.smtp_config?.port || '465'),
         smtpUser: currentOrg?.smtp_config?.auth?.user || '',
@@ -57,6 +59,7 @@ export default function OrgSettings({ onBack }) {
             const updates = {
                 name: form.name.trim(),
                 default_header_image_url: form.default_header_image_url || null,
+                default_theme: form.default_theme || null,
             };
 
             // Process secure SMTP config via our PostgreSQL RPC
@@ -119,14 +122,28 @@ export default function OrgSettings({ onBack }) {
             <Card className="p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Organization Branding</h3>
                 <p className="text-sm text-slate-500 mb-6">
-                    Set a default header image. This image will automatically be applied to any new event you create.
+                    Set a default header image and theme. These will automatically be applied to any new event you create.
                 </p>
-                <HeaderImageUpload
-                    imageUrl={form.default_header_image_url}
-                    orgId={currentOrg.id}
-                    eventId="org-default"
-                    onChange={(url) => setForm(prev => ({ ...prev, default_header_image_url: url }))}
-                />
+                
+                <div className="space-y-8">
+                    <div>
+                        <Label className="mb-2 block">Default Header Image</Label>
+                        <HeaderImageUpload
+                            imageUrl={form.default_header_image_url}
+                            orgId={currentOrg.id}
+                            eventId="org-default"
+                            onChange={(url) => setForm(prev => ({ ...prev, default_header_image_url: url }))}
+                        />
+                    </div>
+
+                    <div className="border-t border-slate-100 pt-6">
+                        <Label className="mb-2 block">Default Theme Colors</Label>
+                        <ThemePicker
+                            theme={form.default_theme}
+                            onChange={(theme) => setForm((prev) => ({ ...prev, default_theme: theme }))}
+                        />
+                    </div>
+                </div>
             </Card>
 
             {/* Organization Details */}
