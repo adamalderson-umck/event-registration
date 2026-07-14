@@ -39,3 +39,4 @@ edge.json
 skills-lock.json
 scripts/
 .agents/
+.worktrees/

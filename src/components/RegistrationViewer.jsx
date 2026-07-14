@@ -17,6 +17,7 @@ import Select from './ui/Select';
 import SignatureViewer from './SignatureViewer';
 import { downloadCsv } from '../utils/exportCsv';
 import { processCsvFile } from '../utils/importCsv';
+import { getRegistrationWaiverStatuses } from '../utils/registrationWaiverStatus';
 import { useRef } from 'react';
 
 export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
@@ -384,33 +385,48 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
                                             {field.label}
                                         </th>
                                     ))}
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Waiver</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Media</th>
                                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
                                     <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {filtered.map((reg) => (
-                                    <tr key={reg.id} className="hover:bg-slate-50 transition-colors">
-                                        {formFields.slice(0, 5).map((field) => (
-                                            <td key={field.id} className="px-4 py-3 text-sm text-slate-700 max-w-[200px] truncate">
-                                                {formatValue(getFormData(reg)[field.id])}
+                                {filtered.map((reg) => {
+                                    const { waiverStatus, mediaDecision } = getRegistrationWaiverStatuses(
+                                        reg,
+                                        event?.waivers
+                                    );
+
+                                    return (
+                                        <tr key={reg.id} className="hover:bg-slate-50 transition-colors">
+                                            {formFields.slice(0, 5).map((field) => (
+                                                <td key={field.id} className="px-4 py-3 text-sm text-slate-700 max-w-[200px] truncate">
+                                                    {formatValue(getFormData(reg)[field.id])}
+                                                </td>
+                                            ))}
+                                            <td className="px-4 py-3 text-sm text-slate-700">
+                                                {waiverStatus}
                                             </td>
-                                        ))}
-                                        <td className="px-4 py-3">
-                                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColors[reg.status] || statusColors.pending}`}>
-                                                {reg.status || 'pending'}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-right">
-                                            <button
-                                                onClick={() => setSelectedReg(reg)}
-                                                className="text-primary hover:text-primary-dark text-sm font-medium inline-flex items-center gap-1 cursor-pointer"
-                                            >
-                                                <Eye className="w-3 h-3" /> View
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                            <td className="px-4 py-3 text-sm text-slate-700">
+                                                {mediaDecision}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColors[reg.status] || statusColors.pending}`}>
+                                                    {reg.status || 'pending'}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                                <button
+                                                    onClick={() => setSelectedReg(reg)}
+                                                    className="text-primary hover:text-primary-dark text-sm font-medium inline-flex items-center gap-1 cursor-pointer"
+                                                >
+                                                    <Eye className="w-3 h-3" /> View
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
