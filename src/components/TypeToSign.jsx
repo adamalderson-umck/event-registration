@@ -1,5 +1,15 @@
 import React from 'react';
 
+/**
+ * TypeToSign is purely presentational and intentionally does NOT emit `signatureData` (image data).
+ *
+ * Under the ESIGN Act and UETA, a typed name constitutes a valid electronic signature as long as there is:
+ * 1. Intent to sign (captured by clicking "submit")
+ * 2. Logical association with the record (typed name, IP, and timestamp are saved with the waiver hash)
+ *
+ * Therefore, saving `signatureMethod: 'type'` alongside the typed `signatureName` and `signatureFont`
+ * is fully legally compliant without needing to generate or store a base64 image of the typed text.
+ */
 export default function TypeToSign({ name }) {
     return (
         <div className="border border-slate-300 rounded-lg bg-white px-6 py-4 relative"
