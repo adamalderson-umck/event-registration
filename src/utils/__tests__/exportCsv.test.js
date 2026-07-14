@@ -8,11 +8,20 @@ describe('buildCsvString', () => {
     { id: 'f3', label: 'Allergies', type: 'checkboxGroup' },
   ];
 
+  const waivers = [
+    { id: 'liability', title: 'Liability Waiver', required: true },
+    { id: 'media', title: 'Media Release', required: false },
+  ];
+
   const registrations = [
     {
       id: 'r1', status: 'confirmed', payment_status: 'paid',
       created_at: '2026-03-20T12:00:00Z',
       form_data: { f1: 'Alice', f2: 'alice@test.com', f3: ['Peanuts', 'Gluten'] },
+      signature_records: [
+        { waiverId: 'liability', signed: true, declined: false },
+        { waiverId: 'media', signed: false, declined: true },
+      ],
     },
     {
       id: 'r2', status: 'waitlisted', payment_status: 'pending',
@@ -22,16 +31,16 @@ describe('buildCsvString', () => {
   ];
 
   it('produces expected CSV header row', () => {
-    const csv = buildCsvString(registrations, fields);
+    const csv = buildCsvString(registrations, fields, waivers);
     const headerLine = csv.split('\n')[0];
-    expect(headerLine).toBe('"First Name","Email","Allergies","Status","Payment","Submitted"');
+    expect(headerLine).toBe('"First Name","Email","Allergies","Waiver","Media","Status","Payment","Submitted"');
   });
 
   it('produces expected data rows', () => {
-    const csv = buildCsvString(registrations, fields);
+    const csv = buildCsvString(registrations, fields, waivers);
     const lines = csv.split('\n');
     expect(lines[1]).toContain('"Alice"');
-    expect(lines[1]).toContain('"confirmed"');
+    expect(lines[1]).toContain('"Signed","Declined","confirmed"');
     expect(lines[1]).toContain('"Peanuts, Gluten"');
   });
 

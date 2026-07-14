@@ -350,7 +350,8 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
                     <Button variant="secondary" size="sm" onClick={() => downloadCsv(
                         filtered,
                         formFields,
-                        `${event?.title?.replace(/\s+/g, '_') || 'registrations'}.csv`
+                        `${event?.title?.replace(/\s+/g, '_') || 'registrations'}.csv`,
+                        event?.waivers
                     )} title="Export to CSV">
                         <Download className="w-4 h-4" /> CSV
                     </Button>
