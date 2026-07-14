@@ -4,6 +4,8 @@
  * for browser print (window.print()).
  */
 
+import { getRegistrationWaiverStatuses } from './registrationWaiverStatus';
+
 const printStyles = `
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -81,20 +83,24 @@ export function printIndividualRegistration(registration, event) {
 export function printRegistrationTable(registrations, event) {
     const formFields = (event.form_fields || []).filter((f) => f.type !== 'sectionBreak');
     const headers = formFields.map((f) => `<th>${f.label}</th>`).join('');
-    const statusHeader = '<th>Status</th>';
+    const derivedHeaders = '<th>Waiver</th><th>Media</th><th>Status</th>';
 
     const rows = registrations.map((reg) => {
         const cells = formFields.map((f) =>
             `<td>${formatValue(reg.form_data?.[f.id])}</td>`
         ).join('');
-        return `<tr>${cells}<td>${reg.status || 'pending'}</td></tr>`;
+        const { waiverStatus, mediaDecision } = getRegistrationWaiverStatuses(
+            reg,
+            event.waivers
+        );
+        return `<tr>${cells}<td>${waiverStatus}</td><td>${mediaDecision}</td><td>${reg.status || 'pending'}</td></tr>`;
     }).join('');
 
     const html = `<!DOCTYPE html><html><head><title>${event.title} - Registrations</title>${printStyles}</head><body>
     <h1>${event.title}</h1>
     <h2>Registration Table &nbsp;·&nbsp; ${registrations.length} registrations</h2>
     <table>
-      <thead><tr>${headers}${statusHeader}</tr></thead>
+      <thead><tr>${headers}${derivedHeaders}</tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </body></html>`;
