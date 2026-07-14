@@ -1,3 +1,5 @@
+import { getRegistrationWaiverStatuses } from './registrationWaiverStatus';
+
 /**
  * Escapes a value for CSV (RFC 4180).
  */
@@ -7,13 +9,15 @@ function escapeCsv(value) {
 }
 
 /**
- * Builds a CSV string from registrations + form field schema.
- * Appends Status, Payment, and Submitted columns.
+ * Builds a CSV string from registrations, form fields, and waiver definitions.
+ * Appends Waiver, Media, Status, Payment, and Submitted columns.
  */
-export function buildCsvString(registrations, formFields) {
+export function buildCsvString(registrations, formFields, waivers = []) {
   const filteredFields = formFields.filter((f) => f.type !== 'sectionBreak');
   const headers = [
     ...filteredFields.map((f) => f.label),
+    'Waiver',
+    'Media',
     'Status',
     'Payment',
     'Submitted',
@@ -24,8 +28,11 @@ export function buildCsvString(registrations, formFields) {
       const val = reg.form_data?.[f.id];
       return Array.isArray(val) ? val.join(', ') : (val ?? '');
     });
+    const { waiverStatus, mediaDecision } = getRegistrationWaiverStatuses(reg, waivers);
     return [
       ...fieldValues,
+      waiverStatus,
+      mediaDecision,
       reg.status || '',
       reg.payment_status || '',
       reg.created_at ? new Date(reg.created_at).toLocaleString() : '',
@@ -43,8 +50,8 @@ export function buildCsvString(registrations, formFields) {
 /**
  * Triggers a CSV file download in the browser.
  */
-export function downloadCsv(registrations, formFields, filename = 'registrations.csv') {
-  const csv = buildCsvString(registrations, formFields);
+export function downloadCsv(registrations, formFields, filename = 'registrations.csv', waivers = []) {
+  const csv = buildCsvString(registrations, formFields, waivers);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

@@ -1,6 +1,10 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+
+const { downloadCsvMock } = vi.hoisted(() => ({ downloadCsvMock: vi.fn() }));
+
+vi.mock('../../utils/exportCsv', () => ({ downloadCsv: downloadCsvMock }));
 
 vi.mock('../../services/supabase', () => {
     const mockOrder = vi.fn();
@@ -26,6 +30,15 @@ import RegistrationViewer from '../RegistrationViewer';
 import { supabase } from '../../services/supabase';
 
 describe('RegistrationViewer', () => {
+    const event = {
+        title: 'Beta Event',
+        form_fields: [{ id: 'name', label: 'Name', type: 'text' }],
+        waivers: [
+            { id: 'liability', title: 'Liability Waiver', required: true },
+            { id: 'media', title: 'Media Release', required: false },
+        ],
+    };
+
     beforeEach(() => {
         vi.clearAllMocks();
         supabase._mocks.mockOrder.mockResolvedValue({
@@ -43,15 +56,6 @@ describe('RegistrationViewer', () => {
     });
 
     it('renders Waiver and Media before Status and keeps Actions last', async () => {
-        const event = {
-            title: 'Beta Event',
-            form_fields: [{ id: 'name', label: 'Name', type: 'text' }],
-            waivers: [
-                { id: 'liability', title: 'Liability Waiver', required: true },
-                { id: 'media', title: 'Media Release', required: false },
-            ],
-        };
-
         render(
             <RegistrationViewer
                 orgId="org-1"
@@ -73,5 +77,26 @@ describe('RegistrationViewer', () => {
             .getAllByRole('cell')
             .map((cell) => cell.textContent.trim());
         expect(cells).toEqual(['Alex', 'Signed', 'Declined', 'confirmed', 'View']);
+    });
+
+    it('passes the event waivers to the CSV export', async () => {
+        render(
+            <RegistrationViewer
+                orgId="org-1"
+                eventId="event-1"
+                event={event}
+                onBack={vi.fn()}
+            />
+        );
+
+        expect(await screen.findByText('Alex')).toBeInTheDocument();
+        fireEvent.click(screen.getByTitle('Export to CSV'));
+
+        expect(downloadCsvMock).toHaveBeenCalledWith(
+            [expect.objectContaining({ id: 'registration-1' })],
+            event.form_fields,
+            'Beta_Event.csv',
+            event.waivers
+        );
     });
 });
