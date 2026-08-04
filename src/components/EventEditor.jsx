@@ -9,7 +9,7 @@ import FormPreviewPane from './FormPreviewPane';
 import WaiverSection from './WaiverSection';
 import HeaderImageUpload from './HeaderImageUpload';
 import ThemePicker from './ThemePicker';
-import { sha256 } from '../utils/hashContent';
+import { buildEventPayload } from '../utils/eventPayload';
 import { useOrg } from '../context/useOrg';
 import { toSlug, isValidSlug } from '../utils/slugUtils';
 import Button from './ui/Button';
@@ -211,39 +211,7 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
         setError('');
 
         try {
-            const eventData = {
-                title: event.title.trim(),
-                slug: event.slug.trim() || null,
-                description: event.description.trim(),
-                location: event.location.trim(),
-                start_date: event.startDate || null,
-                end_date: event.endDate || null,
-                registration_close_date: event.registrationCloseDate || null,
-                status: event.status,
-                capacity: event.capacity ? parseInt(event.capacity) : null,
-                waitlist_enabled: event.waitlistEnabled,
-                payment_enabled: event.paymentEnabled,
-                payment_amount: event.paymentAmount ? parseFloat(event.paymentAmount) : null,
-                form_fields: event.formFields,
-                notifications: {
-                    organizers: event.notifications.organizers.filter((e) => e.trim() !== ''),
-                    perRegistration: event.notifications.perRegistration,
-                    weeklyDigest: event.notifications.weeklyDigest,
-                    digestDay: event.notifications.digestDay,
-                },
-                reminder_hours_before: event.reminderHoursBefore ? parseInt(event.reminderHoursBefore) : null,
-                waivers: await Promise.all(
-                    event.waivers.map(async (w, i) => ({
-                        ...w,
-                        title: w.title.trim(),
-                        contentHash: await sha256(w.content || ''),
-                        order: i,
-                    }))
-                ),
-                header_image_url: event.headerImageUrl,
-                theme: event.theme,
-                org_id: orgId,
-            };
+            const eventData = await buildEventPayload(event, orgId);
 
             if (eventId) {
                 // Update existing
@@ -314,9 +282,14 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
                     <Button variant="ghost" onClick={onBack} type="button">
                         <ArrowLeft className="w-4 h-4" /> Back
                     </Button>
-                    <h2 className="text-xl font-bold text-slate-900">
-                        {eventId ? 'Edit Event' : 'Create Event'}
-                    </h2>
+                    <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-slate-900">
+                            {eventId ? 'Edit Event' : 'Create Event'}
+                        </h2>
+                        {event.eventType === 'parking' && (
+                            <span className="text-xs font-semibold rounded-full bg-blue-50 text-blue-700 px-2 py-0.5">Parking</span>
+                        )}
+                    </div>
                 </div>
                 <div className="flex items-center gap-3">
                     {saved && <span className="text-sm text-success font-medium">✓ Saved</span>}
@@ -487,10 +460,17 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
                             onChange={(e) => handleChange('paymentEnabled', e.target.checked)}
                         />
                         {event.paymentEnabled && (
-                            <div>
-                                <Label htmlFor="event-amount">Amount ($)</Label>
-                                <Input id="event-amount" type="number" step="0.01" value={event.paymentAmount} onChange={(e) => handleChange('paymentAmount', e.target.value)} />
-                            </div>
+                            <>
+                                <div>
+                                    <Label htmlFor="event-amount">Amount ($)</Label>
+                                    <Input id="event-amount" type="number" step="0.01" value={event.paymentAmount} onChange={(e) => handleChange('paymentAmount', e.target.value)} />
+                                </div>
+                                <Checkbox
+                                    label="Allow payment in person"
+                                    checked={event.allowInPersonPayment}
+                                    onChange={(changeEvent) => handleChange('allowInPersonPayment', changeEvent.target.checked)}
+                                />
+                            </>
                         )}
                     </div>
                 </Card>

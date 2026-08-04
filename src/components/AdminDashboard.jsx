@@ -12,6 +12,8 @@ import CreateOrg from './CreateOrg';
 import ShareEventModal from './ShareEventModal';
 import EventDonutChart from './EventDonutChart';
 import EventTypeChooser from './EventTypeChooser';
+import { validateParkingEventRecord } from '../config/eventPresets';
+import { buildDuplicateEventPayload } from '../utils/eventPayload';
 
 // Lazy-loaded sub-views
 const EventEditor = React.lazy(() => import('./EventEditor'));
@@ -118,15 +120,7 @@ export default function AdminDashboard() {
 
     const handleDuplicate = async (sourceEvent) => {
         try {
-            const { id: _id, created_at: _ca, updated_at: _ua, registration_count: _rc, waitlist_count: _wc, reminder_sent_at: _rs, slug: _slug, ...rest } = sourceEvent;
-            const newEvent = {
-                ...rest,
-                title: `${sourceEvent.title} (Copy)`,
-                status: 'draft',
-                registration_count: 0,
-                waitlist_count: 0,
-                reminder_sent_at: null,
-            };
+            const newEvent = buildDuplicateEventPayload(sourceEvent);
 
             const { error } = await supabase.from('events').insert(newEvent);
             if (error) throw error;
@@ -301,6 +295,16 @@ export default function AdminDashboard() {
     };
 
     const handleStatusChange = async (eventId, newStatus) => {
+        const targetEvent = events.find((event) => event.id === eventId);
+        if (newStatus === 'active') {
+            const validationError = validateParkingEventRecord(targetEvent)[0];
+            if (validationError) {
+                setDashboardError(validationError);
+                setTimeout(() => setDashboardError(''), 4000);
+                return;
+            }
+        }
+
         // Capture previous state for rollback
         const previousEvents = events;
         // Optimistic update — immediately reflect in the UI
@@ -429,6 +433,9 @@ export default function AdminDashboard() {
                                     <div>
                                         <div className="flex items-center gap-2 mb-1">
                                             <h3 className="font-semibold text-slate-900 truncate">{event.title}</h3>
+                                            {event.event_type === 'parking' && (
+                                                <span className="text-xs font-semibold rounded-full bg-blue-50 text-blue-700 px-2 py-0.5">Parking</span>
+                                            )}
                                             <select
                                                 value={event.status}
                                                 onChange={(e) => handleStatusChange(event.id, e.target.value)}
