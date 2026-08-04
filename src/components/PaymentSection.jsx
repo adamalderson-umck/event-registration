@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import { supabase } from '../services/supabase';
 import Card from './ui/Card';
@@ -6,9 +6,13 @@ import Card from './ui/Card';
 const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID || 'test';
 
 export default function PaymentSection({ registrationId, amount, onPaymentComplete }) {
+    const [failure, setFailure] = useState('');
+
     if (!amount || amount <= 0) return null;
 
     const handleApprove = async (data, actions) => {
+        setFailure('');
+
         try {
             const details = await actions.order.capture();
 
@@ -33,6 +37,7 @@ export default function PaymentSection({ registrationId, amount, onPaymentComple
             onPaymentComplete?.({ success: true, details });
         } catch (err) {
             console.error('Payment capture error:', err);
+            setFailure('Payment could not be completed. Please try again.');
             onPaymentComplete?.({ success: false, error: err.message });
         }
     };
@@ -78,6 +83,12 @@ export default function PaymentSection({ registrationId, amount, onPaymentComple
                     }}
                 />
             </PayPalScriptProvider>
+
+            {failure && (
+                <p role="alert" className="text-sm text-red-600 mt-3">
+                    {failure}
+                </p>
+            )}
         </Card>
     );
 }

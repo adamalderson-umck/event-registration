@@ -17,7 +17,9 @@ import '@testing-library/jest-dom';
 // ── Supabase mock ─────────────────────────────────────────────────────────────
 // Factory must be self-contained (no external var references due to hoisting)
 vi.mock('../../services/supabase', () => {
-    const mockInsert = vi.fn();
+    const mockInsertSingle = vi.fn();
+    const mockInsertSelect = vi.fn(() => ({ single: mockInsertSingle }));
+    const mockInsert = vi.fn(() => ({ select: mockInsertSelect }));
     const mockSingle = vi.fn();
     const mockEq2 = vi.fn(() => ({ single: mockSingle }));
     const mockEq1 = vi.fn(() => ({ eq: mockEq2 }));
@@ -32,7 +34,7 @@ vi.mock('../../services/supabase', () => {
             auth: {
                 getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }),
             },
-            _mocks: { mockInsert, mockSingle, mockFrom, mockInvoke },
+            _mocks: { mockInsert, mockInsertSelect, mockInsertSingle, mockSingle, mockFrom, mockInvoke },
         },
     };
 });
@@ -50,6 +52,23 @@ vi.mock('../SignaturePad', () => ({
 // Stub WaiverEditor (rich text) — not needed for form submission tests
 vi.mock('../WaiverEditor', () => ({
     default: ({ content }) => <div data-testid="waiver-editor">{content}</div>,
+}));
+
+vi.mock('../RegistrationPaymentStep', () => ({
+    default: ({ registration, onComplete }) => (
+        <section>
+            <h2>Payment Required</h2>
+            <button
+                onClick={() => onComplete({
+                    ...registration,
+                    payment_status: 'paid',
+                    payment_method: 'paypal',
+                })}
+            >
+                Complete Mock Payment
+            </button>
+        </section>
+    ),
 }));
 
 // Import AFTER mock is registered
@@ -80,11 +99,15 @@ function makeEvent(overrides = {}) {
 }
 
 function setupMocks(eventData = makeEvent(), insertError = null) {
-    const { mockInsert, mockSingle, mockFrom, mockInvoke } = supabase._mocks;
+    const { mockInsert, mockInsertSelect, mockInsertSingle, mockSingle, mockFrom, mockInvoke } = supabase._mocks;
 
     // Reset call history
     mockSingle.mockReset();
+    mockInsertSelect.mockReset();
+    mockInsertSelect.mockImplementation(() => ({ single: mockInsertSingle }));
     mockInsert.mockReset();
+    mockInsert.mockImplementation(() => ({ select: mockInsertSelect }));
+    mockInsertSingle.mockReset();
     mockFrom.mockClear();
     mockInvoke.mockReset();
 
@@ -94,8 +117,22 @@ function setupMocks(eventData = makeEvent(), insertError = null) {
     const mockSelect = vi.fn(() => ({ eq: mockEq1 }));
     mockFrom.mockReturnValue({ select: mockSelect, insert: mockInsert });
     mockSingle.mockResolvedValue({ data: eventData, error: null });
-    mockInsert.mockResolvedValue({ error: insertError });
+    mockInsertSingle.mockResolvedValue({
+        data: {
+            id: 'registration-1',
+            status: 'confirmed',
+            payment_status: 'pending',
+            payment_method: null,
+        },
+        error: insertError,
+    });
     mockInvoke.mockResolvedValue({ data: { ip: '127.0.0.1' }, error: null });
+}
+
+async function completeRequiredFields({ firstName = 'John', lastName = 'Doe', email = 'john@example.com' } = {}) {
+    await userEvent.type(await screen.findByLabelText(/first name/i), firstName);
+    await userEvent.type(screen.getByLabelText(/last name/i), lastName);
+    await userEvent.type(screen.getByLabelText(/email/i), email);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -140,9 +177,7 @@ describe('EventRegistrationForm', () => {
         setupMocks();
         render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
 
-        await userEvent.type(await screen.findByLabelText(/first name/i), 'John');
-        await userEvent.type(screen.getByLabelText(/last name/i), 'Doe');
-        await userEvent.type(screen.getByLabelText(/email/i), 'john@example.com');
+        await completeRequiredFields();
 
         fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
 
@@ -158,6 +193,78 @@ describe('EventRegistrationForm', () => {
 
         // SuccessState renders after submit
         expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
+    });
+
+    it('routes a confirmed paid parking registration through the payment phase', async () => {
+        setupMocks(makeEvent({
+            event_type: 'parking',
+            payment_enabled: true,
+            payment_amount: 100,
+            allow_in_person_payment: true,
+        }));
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields();
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+
+        expect(await screen.findByText(/payment required/i)).toBeInTheDocument();
+        expect(supabase._mocks.mockInsertSingle).toHaveBeenCalledTimes(1);
+
+        fireEvent.click(screen.getByRole('button', { name: /complete mock payment/i }));
+        expect(await screen.findByText(/^valid$/i)).toBeInTheDocument();
+    });
+
+    it('uses the returned waitlist status and skips parking payment despite stale capacity counters', async () => {
+        setupMocks(makeEvent({
+            event_type: 'parking',
+            payment_enabled: true,
+            payment_amount: 100,
+            allow_in_person_payment: true,
+            capacity: 10,
+            registration_count: 1,
+            waitlist_enabled: true,
+        }));
+        supabase._mocks.mockInsertSingle.mockResolvedValue({
+            data: {
+                id: 'registration-1',
+                status: 'waitlisted',
+                payment_status: 'pending',
+                payment_method: null,
+            },
+            error: null,
+        });
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields();
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+
+        expect(await screen.findByText(/added to waitlist/i)).toBeInTheDocument();
+        expect(screen.queryByText(/payment required/i)).not.toBeInTheDocument();
+    });
+
+    it('skips parking payment when the returned registration is not confirmed', async () => {
+        setupMocks(makeEvent({
+            event_type: 'parking',
+            payment_enabled: true,
+            payment_amount: 100,
+            allow_in_person_payment: true,
+        }));
+        supabase._mocks.mockInsertSingle.mockResolvedValue({
+            data: {
+                id: 'registration-1',
+                status: 'pending',
+                payment_status: 'pending',
+                payment_method: null,
+            },
+            error: null,
+        });
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields();
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+
+        expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
+        expect(screen.queryByText(/payment required/i)).not.toBeInTheDocument();
     });
 
     it('shows error message when submit fails', async () => {
