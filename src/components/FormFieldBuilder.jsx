@@ -64,13 +64,18 @@ function SortableField({ field, isSelected, onSelect, onRemove, isChecked, onTog
                 >
                     <GripVertical className="w-4 h-4" />
                 </button>
-                <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => onToggleCheck(field.id)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-4 h-4 cursor-pointer accent-primary rounded border-slate-300 shrink-0"
-                />
+                {!field.system ? (
+                    <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => onToggleCheck(field.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Select ${field.label} for deletion`}
+                        className="w-4 h-4 cursor-pointer accent-primary rounded border-slate-300 shrink-0"
+                    />
+                ) : (
+                    <div className="w-4 h-4 shrink-0" />
+                )}
                 <div
                     className="flex-1 min-w-0 cursor-pointer flex items-center gap-2"
                     onClick={() => onSelect(field)}
@@ -81,12 +86,15 @@ function SortableField({ field, isSelected, onSelect, onRemove, isChecked, onTog
                     </p>
                     <span className="text-xs text-slate-400 uppercase tracking-wide">Section Break</span>
                 </div>
-                <button
-                    onClick={(e) => { e.stopPropagation(); onRemove(field.id); }}
-                    className="text-slate-300 hover:text-danger shrink-0 cursor-pointer"
-                >
-                    <Trash2 className="w-4 h-4" />
-                </button>
+                {!field.system && (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onRemove(field.id); }}
+                        aria-label={`Delete ${field.label}`}
+                        className="text-slate-300 hover:text-danger shrink-0 cursor-pointer"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </button>
+                )}
             </div>
         );
     }
@@ -116,6 +124,7 @@ function SortableField({ field, isSelected, onSelect, onRemove, isChecked, onTog
                     checked={isChecked}
                     onChange={() => onToggleCheck(field.id)}
                     onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select ${field.label} for deletion`}
                     className="w-4 h-4 cursor-pointer accent-primary rounded border-slate-300 shrink-0"
                 />
             ) : (
@@ -139,6 +148,7 @@ function SortableField({ field, isSelected, onSelect, onRemove, isChecked, onTog
             {!field.system && (
                 <button
                     onClick={(e) => { e.stopPropagation(); onRemove(field.id); }}
+                    aria-label={`Delete ${field.label}`}
                     className="text-slate-300 hover:text-danger shrink-0 cursor-pointer"
                 >
                     <Trash2 className="w-4 h-4" />
@@ -213,6 +223,9 @@ export default function FormFieldBuilder({ fields, onChange }) {
     };
 
     const removeField = (fieldId) => {
+        const field = fields.find((item) => item.id === fieldId);
+        if (field?.system) return;
+
         onChange(fields.filter((f) => f.id !== fieldId));
         if (selectedField?.id === fieldId) setSelectedField(null);
         if (checkedIds.has(fieldId)) {
@@ -230,16 +243,16 @@ export default function FormFieldBuilder({ fields, onChange }) {
     };
 
     const handleClearAll = () => {
-        if (window.confirm('Are you sure you want to remove all fields?')) {
-            onChange([]);
+        if (window.confirm('Remove all custom fields? Protected fields will remain.')) {
+            onChange(fields.filter((field) => field.system));
             setSelectedField(null);
             setCheckedIds(new Set());
         }
     };
 
     const handleRemoveChecked = () => {
-        onChange(fields.filter(f => !checkedIds.has(f.id)));
-        if (selectedField && checkedIds.has(selectedField.id)) {
+        onChange(fields.filter((field) => field.system || !checkedIds.has(field.id)));
+        if (selectedField && !selectedField.system && checkedIds.has(selectedField.id)) {
             setSelectedField(null);
         }
         setCheckedIds(new Set());

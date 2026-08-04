@@ -18,7 +18,7 @@ import Label from './ui/Label';
 import Select from './ui/Select';
 import Checkbox from './ui/Checkbox';
 import Card from './ui/Card';
-import { SYSTEM_FIELDS } from '../config/eventPresets';
+import { EVENT_TYPES, SYSTEM_FIELDS, createEventPreset } from '../config/eventPresets';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
@@ -36,7 +36,7 @@ const deduplicateFieldIds = (fields) => {
     });
 };
 
-export default function EventEditor({ orgId, eventId, onBack }) {
+export default function EventEditor({ orgId, eventId, onBack, initialEventType = EVENT_TYPES.STANDARD }) {
     const { currentOrg } = useOrg();
     const [loading, setLoading] = useState(!!eventId);
     const [saving, setSaving] = useState(false);
@@ -45,7 +45,9 @@ export default function EventEditor({ orgId, eventId, onBack }) {
     const [userDisplayName, setUserDisplayName] = useState('');
     const originalOrganizers = useRef([]);
 
-    const [event, setEvent] = useState({
+    const [event, setEvent] = useState(() => {
+        const preset = createEventPreset(initialEventType);
+        return {
         title: '',
         slug: '',
         description: '',
@@ -56,9 +58,11 @@ export default function EventEditor({ orgId, eventId, onBack }) {
         status: 'draft',
         capacity: '',
         waitlistEnabled: false,
-        paymentEnabled: false,
-        paymentAmount: '',
-        formFields: SYSTEM_FIELDS,
+        eventType: preset.eventType,
+        paymentEnabled: preset.paymentEnabled,
+        paymentAmount: preset.paymentAmount,
+        allowInPersonPayment: preset.allowInPersonPayment,
+        formFields: preset.formFields,
         notifications: {
             organizers: [''],
             perRegistration: false,
@@ -66,9 +70,10 @@ export default function EventEditor({ orgId, eventId, onBack }) {
             digestDay: 'monday',
         },
         reminderHoursBefore: '',
-        waivers: [],
+        waivers: preset.waivers,
         headerImageUrl: currentOrg?.default_header_image_url || null,
         theme: null,
+        };
     });
 
     // Load existing event
@@ -107,8 +112,10 @@ export default function EventEditor({ orgId, eventId, onBack }) {
                         status: data.status || 'draft',
                         capacity: data.capacity != null ? String(data.capacity) : '',
                         waitlistEnabled: !!data.waitlist_enabled,
+                        eventType: data.event_type || EVENT_TYPES.STANDARD,
                         paymentEnabled: !!data.payment_enabled,
                         paymentAmount: data.payment_amount != null ? String(data.payment_amount) : '',
+                        allowInPersonPayment: !!data.allow_in_person_payment,
                         formFields: loadedFields,
                         notifications: {
                             organizers: data.notifications?.organizers?.length > 0

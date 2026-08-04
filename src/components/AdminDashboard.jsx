@@ -11,6 +11,7 @@ import OrgPicker from './OrgPicker';
 import CreateOrg from './CreateOrg';
 import ShareEventModal from './ShareEventModal';
 import EventDonutChart from './EventDonutChart';
+import EventTypeChooser from './EventTypeChooser';
 
 // Lazy-loaded sub-views
 const EventEditor = React.lazy(() => import('./EventEditor'));
@@ -26,6 +27,7 @@ export default function AdminDashboard() {
     const [subView, setSubView] = useState(null);
     const [dashboardError, setDashboardError] = useState(''); // 'editor', 'registrations', 'settings', 'create-org'
     const [selectedEventId, setSelectedEventId] = useState(null);
+    const [newEventType, setNewEventType] = useState(null);
     const [shareEvent, setShareEvent] = useState(null);
 
     // Fetch user's organizations
@@ -231,13 +233,27 @@ export default function AdminDashboard() {
     }
 
     // Sub-views
+    if (subView === 'choose-event-type') {
+        return (
+            <EventTypeChooser
+                onChoose={(eventType) => {
+                    setNewEventType(eventType);
+                    setSelectedEventId(null);
+                    setSubView('editor');
+                }}
+                onCancel={() => setSubView(null)}
+            />
+        );
+    }
+
     if (subView === 'editor') {
         return (
             <React.Suspense fallback={<Loader2 className="w-6 h-6 animate-spin text-primary mx-auto mt-12" />}>
                 <EventEditor
                     orgId={currentOrg.id}
                     eventId={selectedEventId}
-                    onBack={() => { setSubView(null); setSelectedEventId(null); }}
+                    initialEventType={selectedEventId ? null : newEventType}
+                    onBack={() => { setSubView(null); setSelectedEventId(null); setNewEventType(null); }}
                 />
             </React.Suspense>
         );
@@ -388,7 +404,8 @@ export default function AdminDashboard() {
                 <Button
                     onClick={() => {
                         setSelectedEventId(null);
-                        setSubView('editor');
+                        setNewEventType(null);
+                        setSubView('choose-event-type');
                     }}
                     size="sm"
                 >
