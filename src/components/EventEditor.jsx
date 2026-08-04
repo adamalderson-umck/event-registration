@@ -18,6 +18,7 @@ import Label from './ui/Label';
 import Select from './ui/Select';
 import Checkbox from './ui/Checkbox';
 import Card from './ui/Card';
+import { SYSTEM_FIELDS } from '../config/eventPresets';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
@@ -34,12 +35,6 @@ const deduplicateFieldIds = (fields) => {
         return field;
     });
 };
-
-const SYSTEM_FIELDS = [
-    { id: 'system_first_name', type: 'text', label: 'Your First Name', required: true, system: true },
-    { id: 'system_last_name', type: 'text', label: 'Your Last Name', required: true, system: true },
-    { id: 'system_email', type: 'email', label: 'Your Email', required: true, system: true }
-];
 
 export default function EventEditor({ orgId, eventId, onBack }) {
     const { currentOrg } = useOrg();
