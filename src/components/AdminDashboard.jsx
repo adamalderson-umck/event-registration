@@ -260,6 +260,7 @@ export default function AdminDashboard() {
                     orgId={currentOrg.id}
                     eventId={selectedEventId}
                     event={events.find((e) => e.id === selectedEventId)}
+                    organizationName={currentOrg.name}
                     onBack={() => { setSubView(null); setSelectedEventId(null); }}
                 />
             </React.Suspense>

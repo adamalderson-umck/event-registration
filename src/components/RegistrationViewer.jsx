@@ -15,12 +15,14 @@ import Card from './ui/Card';
 import Input from './ui/Input';
 import Select from './ui/Select';
 import SignatureViewer from './SignatureViewer';
+import ParkingRegistrationTable from './ParkingRegistrationTable';
 import { downloadCsv } from '../utils/exportCsv';
 import { processCsvFile } from '../utils/importCsv';
 import { getRegistrationWaiverStatuses } from '../utils/registrationWaiverStatus';
+import { printParkingPass } from '../utils/parkingPass';
 import { useRef } from 'react';
 
-export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
+export default function RegistrationViewer({ orgId, eventId, event, organizationName, onBack }) {
     const [registrations, setRegistrations] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -98,6 +100,39 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
             setTimeout(() => setCancelError(''), 5000);
         } finally {
             setCancellingId(null);
+        }
+    };
+
+    const handleMarkPaid = async (registration) => {
+        try {
+            const { data, error } = await supabase.rpc('mark_registration_paid', {
+                p_registration_id: registration.id,
+                p_org_id: orgId,
+            });
+
+            if (error) throw error;
+
+            const updatedRegistration = Array.isArray(data) ? data[0] : data;
+            if (!updatedRegistration) return;
+
+            setRegistrations((current) => current.map((item) => (
+                item.id === updatedRegistration.id ? updatedRegistration : item
+            )));
+            setSelectedReg((current) => (
+                current?.id === updatedRegistration.id ? updatedRegistration : current
+            ));
+        } catch (err) {
+            console.error('Failed to mark payment as paid:', err);
+            setCancelError('Failed to mark payment as paid: ' + (err.message || 'Unknown error'));
+        }
+    };
+
+    const handlePrintParkingPass = (registration) => {
+        try {
+            printParkingPass(registration, event, organizationName);
+        } catch (err) {
+            console.error('Failed to print parking pass:', err);
+            setCancelError(err.message || 'Unable to print this parking pass.');
         }
     };
 
@@ -289,6 +324,12 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
 
     return (
         <div className="space-y-4">
+            {cancelError && (
+                <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+                    <span>{cancelError}</span>
+                    <button onClick={() => setCancelError('')} className="text-red-400 hover:text-red-600 shrink-0 cursor-pointer">âœ•</button>
+                </div>
+            )}
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -375,6 +416,13 @@ export default function RegistrationViewer({ orgId, eventId, event, onBack }) {
                         {registrations.length === 0 ? 'No registrations yet' : 'No matching registrations'}
                     </p>
                 </Card>
+            ) : event?.event_type === 'parking' ? (
+                <ParkingRegistrationTable
+                    registrations={filtered}
+                    onView={setSelectedReg}
+                    onMarkPaid={handleMarkPaid}
+                    onPrintPass={handlePrintParkingPass}
+                />
             ) : (
                 <Card className="overflow-hidden">
                     <div className="overflow-x-auto">
