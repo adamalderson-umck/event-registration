@@ -78,4 +78,31 @@ describe('buildCsvString', () => {
     expect(headerLine).toContain('First Name');
     expect(headerLine).toContain('Email');
   });
+
+  it('preserves parking registration fields and report parity columns', () => {
+    const parkingFields = [
+      { id: 'system_first_name', label: 'First Name', type: 'text' },
+      { id: 'parking_license_plate', label: 'License Plate', type: 'text' },
+    ];
+    const parkingRegistrations = [{
+      id: 'parking-1',
+      status: 'confirmed',
+      payment_status: 'paid',
+      form_data: {
+        system_first_name: 'Alex',
+        parking_license_plate: 'ABC123',
+      },
+      signature_records: [],
+    }];
+
+    const csv = buildCsvString(parkingRegistrations, parkingFields);
+    const unquotedCsv = csv.replaceAll('"', '');
+
+    expect(unquotedCsv).toContain(
+      'First Name,License Plate,Waiver,Media,Status,Payment,Submitted'
+    );
+    expect(unquotedCsv).toContain(
+      'Alex,ABC123,Missing,Missing,confirmed,paid'
+    );
+  });
 });
