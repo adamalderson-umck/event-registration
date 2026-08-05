@@ -63,18 +63,27 @@ describe('parking passes', () => {
     });
 
     it('embeds the approved font and logo treatment', () => {
-        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, assets);
+        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, {
+            ...assets,
+            fontUrl: '/assets/source-sans-3-latin-wght-normal.woff2?cache=a&v=1',
+        });
 
-        expect(html).toContain("@font-face { font-family: 'Source Sans 3'; src: url('/assets/source-sans-3-latin-wght-normal.woff2') format('woff2'); font-style: normal; font-weight: 200 900; font-display: swap; }");
+        expect(html).toContain("@font-face { font-family: 'Source Sans 3'; src: url('/assets/source-sans-3-latin-wght-normal.woff2?cache=a&v=1') format('woff2'); font-style: normal; font-weight: 200 900; font-display: swap; }");
         expect(html).toContain(".plate { font-size: 42pt; line-height: .95; font-weight: 900;");
         expect(html).toContain(".valid { background: #111; color: #fff; font-size: 13pt; font-weight: 900;");
+        expect(html).toContain(".organization { font-size: 11pt; font-weight: 700;");
         expect(html).toContain(".event { font-size: 10pt; font-weight: 800;");
+        expect(html).toContain(".vehicle { font-size: 11pt; font-weight: 700;");
         expect(html).toContain(".advisory { border-top: 1px solid #aaa; border-bottom: 1px solid #aaa; color: #777; font-size: 10pt; font-weight: 800;");
+        expect(html).toContain(".meta-label { color: #777; font-size: 7pt; font-weight: 700;");
+        expect(html).toContain(".meta-value { font-size: 9pt; font-weight: 700;");
         expect(html).toContain(".direction { text-align: center; font-size: 8pt; font-weight: 600;");
         expect(html.match(/\/assets\/UMC_of_Kent_logo\.svg/g)).toHaveLength(2);
         expect(html).toContain('<img class="brand-logo" src="/assets/UMC_of_Kent_logo.svg" alt="Kent Methodist Church logo">');
         expect(html).toContain('<img class="watermark" src="/assets/UMC_of_Kent_logo.svg" alt="" aria-hidden="true">');
+        expect(html).toContain('.brand-logo { width: .54in; height: .54in; object-fit: contain; filter: grayscale(1) brightness(0); }');
         expect(html).toContain('.watermark { position: absolute; width: 6.6in; height: 6.6in;');
+        expect(html).toContain('filter: grayscale(1) brightness(0); opacity: .045;');
         expect(html).toContain('opacity: .045;');
     });
 

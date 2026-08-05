@@ -21,6 +21,13 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function escapeCssUrl(value) {
+    return String(value ?? '')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\\\'")
+        .replace(/[\0-\x1F\x7F]/g, (character) => `\\${character.codePointAt(0).toString(16)} `);
+}
+
 function formatDate(value) {
     if (!value) return 'Open term';
 
@@ -55,7 +62,7 @@ export function buildParkingPassHtml(registration, event, organization, assets =
     const registrationId = escapeHtml(String(registration?.id ?? '').slice(0, 8));
     const dates = escapeHtml(`${formatDate(event?.start_date)} - ${formatDate(event?.end_date)}`);
     const logoUrl = escapeHtml(assets.logoUrl);
-    const fontUrl = escapeHtml(assets.fontUrl);
+    const fontUrl = escapeCssUrl(assets.fontUrl);
 
     return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${eventTitle} Parking Pass</title>
