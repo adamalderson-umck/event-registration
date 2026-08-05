@@ -58,11 +58,21 @@ export function parseTithelyEmbedCode(embedCode) {
 
     const document = new DOMParser().parseFromString(embedCode, 'text/html');
     const elements = [...document.body.children];
-    const hasOnlyWhitespaceText = [...document.body.childNodes]
-        .filter(node => node.nodeType === 3)
-        .every(node => !node.textContent.trim());
+    const hasOnlyAllowedBodyNodes = [...document.body.childNodes].every(node => (
+        node.nodeType === 1 || (node.nodeType === 3 && !node.textContent.trim())
+    ));
+    const hasEventHandler = [...document.querySelectorAll('*')].some(element => (
+        [...element.attributes].some(attribute => attribute.name.startsWith('on'))
+    ));
 
-    if (!hasOnlyWhitespaceText || elements.length !== 2) {
+    if (
+        document.head.childNodes.length
+        || document.documentElement.attributes.length
+        || document.body.attributes.length
+        || hasEventHandler
+        || !hasOnlyAllowedBodyNodes
+        || elements.length !== 2
+    ) {
         fail(EMBED_ERROR);
     }
 
@@ -81,6 +91,7 @@ export function parseTithelyEmbedCode(embedCode) {
         hasInvalidButtonAttribute
         || button.getAttribute('class') !== 'tithely-give-button'
         || !isUuid(button.getAttribute('data-form'))
+        || button.children.length
     ) {
         fail(EMBED_ERROR);
     }

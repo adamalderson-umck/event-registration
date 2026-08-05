@@ -28,6 +28,8 @@ describe('Tithe.ly giving URL parsing', () => {
         'http://give.tithe.ly/?formId=' + FORM_ID,
         'https://give.tithe.ly.example/?formId=' + FORM_ID,
         'https://give.tithe.ly/give?formId=' + FORM_ID,
+        `https://user:password@give.tithe.ly/?formId=${FORM_ID}`,
+        `https://give.tithe.ly/?formId=${FORM_ID}#section`,
         'https://give.tithe.ly/',
         'https://give.tithe.ly/?formId=not-a-uuid',
         `https://give.tithe.ly/?formId=${FORM_ID}&formId=${FORM_ID}`,
@@ -47,6 +49,15 @@ describe('Tithe.ly embed parsing', () => {
         `<button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js">alert(1)</script>`,
         `<button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js"></script><script defer src="https://static.tithely.com/give/give.js"></script>`,
         `<script defer src="https://static.tithely.com/give/give.js"></script>`,
+        `<button class="tithely-give-button" data-form="${FORM_ID}">Give</button>`,
+        `<button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script src="https://static.tithely.com/give/give.js"></script>`,
+        `<button class="other" data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
+        `<button data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
+        `<button class="tithely-give-button">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
+        `<button class="tithely-give-button" data-form="${FORM_ID}" title="Give">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
+        `<button class="tithely-give-button" data-form="${FORM_ID}"><span onclick="alert(1)">Give</span></button><script defer src="https://static.tithely.com/give/give.js"></script>`,
+        `<title>Unexpected</title><button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
+        `<body data-extra="unsafe"><button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js"></script></body>`,
     ])('rejects unsafe or incomplete embed code', code => {
         expect(() => parseTithelyEmbedCode(code)).toThrow('Paste the official Tithe.ly embed code.');
     });
@@ -70,10 +81,21 @@ describe('Tithe.ly configuration', () => {
         });
     });
 
+    it('returns a null configuration when all inputs are absent', () => {
+        expect(normalizeTithelyConfiguration({})).toEqual({ givingUrl: null, embedConfig: null });
+    });
+
     it('rejects mismatched URL and embed form IDs', () => {
         expect(() => normalizeTithelyConfiguration({
             givingUrl,
             embedCode: embedCode(OTHER_FORM_ID),
+        })).toThrow('Tithe.ly URL and embed code must use the same form ID.');
+    });
+
+    it('rejects a saved form ID that does not match the URL', () => {
+        expect(() => normalizeTithelyConfiguration({
+            givingUrl,
+            existingEmbedConfig: { formId: OTHER_FORM_ID },
         })).toThrow('Tithe.ly URL and embed code must use the same form ID.');
     });
 
@@ -97,6 +119,17 @@ describe('stored Tithe.ly configuration and payment methods', () => {
 
     it('validates a persisted snake-case configuration', () => {
         expect(validateStoredTithelyConfiguration(storedEvent)).toEqual({
+            valid: true,
+            givingUrl,
+            embedConfig: { formId: FORM_ID },
+        });
+    });
+
+    it('validates a camelCase editor configuration', () => {
+        expect(validateStoredTithelyConfiguration({
+            tithelyGivingUrl: givingUrl,
+            tithelyEmbedConfig: { formId: FORM_ID },
+        })).toEqual({
             valid: true,
             givingUrl,
             embedConfig: { formId: FORM_ID },
