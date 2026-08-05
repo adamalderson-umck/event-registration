@@ -185,6 +185,55 @@ describe('parking passes', () => {
         expect(printWindow.print).toHaveBeenCalledOnce();
     });
 
+    it('waits for a pending image when fonts fail to load', async () => {
+        vi.useFakeTimers();
+        let resolveImage;
+        const image = {
+            complete: false,
+            addEventListener: vi.fn((eventName, listener) => {
+                if (eventName === 'load') resolveImage = listener;
+            }),
+        };
+        const printWindow = makePrintWindow({
+            fontsReady: Promise.reject(new Error('Font unavailable')),
+            images: [image],
+        });
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        await vi.advanceTimersByTimeAsync(0);
+        expect(printWindow.print).not.toHaveBeenCalled();
+
+        resolveImage();
+        await result;
+        expect(printWindow.print).toHaveBeenCalledOnce();
+    });
+
+    it('prints when fonts are unavailable but all images are complete', async () => {
+        const printWindow = makePrintWindow({ images: [{ complete: true }] });
+        delete printWindow.document.fonts;
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        await result;
+        expect(printWindow.print).toHaveBeenCalledOnce();
+    });
+
+    it('clears the fallback timer when print assets become ready early', async () => {
+        vi.useFakeTimers();
+        const printWindow = makePrintWindow();
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        expect(vi.getTimerCount()).toBe(1);
+        await result;
+        expect(vi.getTimerCount()).toBe(0);
+        expect(printWindow.print).toHaveBeenCalledOnce();
+    });
+
     it('prints after the 1500ms fallback when an asset never settles', async () => {
         vi.useFakeTimers();
         const printWindow = makePrintWindow({ fontsReady: new Promise(() => {}) });

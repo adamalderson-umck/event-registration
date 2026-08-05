@@ -134,7 +134,7 @@ function settleWithin(promise, timeoutMs) {
 
 function waitForPrintAssets(printWindow) {
     const document = printWindow.document;
-    const fontsReady = document.fonts?.ready ?? Promise.resolve();
+    const fontsReady = Promise.resolve(document.fonts?.ready ?? Promise.resolve()).catch(() => undefined);
     const imagesReady = Promise.all(Array.from(document.images ?? [], waitForImage));
 
     return settleWithin(Promise.all([fontsReady, imagesReady]), PRINT_ASSET_TIMEOUT_MS);
