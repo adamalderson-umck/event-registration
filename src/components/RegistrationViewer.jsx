@@ -20,6 +20,7 @@ import { downloadCsv } from '../utils/exportCsv';
 import { processCsvFile } from '../utils/importCsv';
 import { getRegistrationWaiverStatuses } from '../utils/registrationWaiverStatus';
 import { printParkingPass } from '../utils/parkingPass';
+import { canMarkRegistrationPaid } from '../utils/paymentStatus';
 import { useRef } from 'react';
 
 export default function RegistrationViewer({ orgId, eventId, event, organizationName, onBack }) {
@@ -29,6 +30,7 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
     const [statusFilter, setStatusFilter] = useState('all');
     const [selectedReg, setSelectedReg] = useState(null);
     const [cancellingId, setCancellingId] = useState(null);
+    const [markingPaidId, setMarkingPaidId] = useState(null);
     const [cancelError, setCancelError] = useState('');
 
     // Import states
@@ -104,6 +106,9 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
     };
 
     const handleMarkPaid = async (registration) => {
+        if (!canMarkRegistrationPaid(registration) || markingPaidId) return;
+
+        setMarkingPaidId(registration.id);
         try {
             const { data, error } = await supabase.rpc('mark_registration_paid', {
                 p_registration_id: registration.id,
@@ -124,6 +129,8 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
         } catch (err) {
             console.error('Failed to mark payment as paid:', err);
             setCancelError('Failed to mark payment as paid: ' + (err.message || 'Unknown error'));
+        } finally {
+            setMarkingPaidId(null);
         }
     };
 
@@ -275,6 +282,16 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                                 <XCircle className="w-4 h-4" /> Cancel Registration
                             </Button>
                         )}
+                        {canMarkRegistrationPaid(selectedReg) && (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => handleMarkPaid(selectedReg)}
+                                loading={markingPaidId === selectedReg.id}
+                            >
+                                Mark Paid
+                            </Button>
+                        )}
                         <Button
                             variant="secondary"
                             size="sm"
@@ -422,6 +439,7 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                     onView={setSelectedReg}
                     onMarkPaid={handleMarkPaid}
                     onPrintPass={handlePrintParkingPass}
+                    markingPaidId={markingPaidId}
                 />
             ) : (
                 <Card className="overflow-hidden">
@@ -466,12 +484,24 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3 text-right">
-                                                <button
-                                                    onClick={() => setSelectedReg(reg)}
-                                                    className="text-primary hover:text-primary-dark text-sm font-medium inline-flex items-center gap-1 cursor-pointer"
-                                                >
-                                                    <Eye className="w-3 h-3" /> View
-                                                </button>
+                                                <div className="inline-flex items-center gap-3">
+                                                    <button
+                                                        onClick={() => setSelectedReg(reg)}
+                                                        className="text-primary hover:text-primary-dark text-sm font-medium inline-flex items-center gap-1 cursor-pointer"
+                                                    >
+                                                        <Eye className="w-3 h-3" /> View
+                                                    </button>
+                                                    {canMarkRegistrationPaid(reg) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleMarkPaid(reg)}
+                                                            disabled={markingPaidId === reg.id}
+                                                            className="text-primary hover:text-primary-dark text-sm font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                                                        >
+                                                            {markingPaidId === reg.id ? 'Marking Paid…' : 'Mark Paid'}
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     );
