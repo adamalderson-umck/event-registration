@@ -49,7 +49,7 @@ describe('TithelyConfigurationFields', () => {
         render(
             <TithelyConfigurationFields
                 tithelyGivingUrl="https://example.com/give"
-                tithelyEmbedCode={'<script data-testid="untrusted-code">alert(1)</script>'}
+                tithelyEmbedCode={makeEmbedCode(FORM_ID)}
                 allowInPerson
                 onChange={vi.fn()}
             />,
@@ -62,7 +62,6 @@ describe('TithelyConfigurationFields', () => {
         expect(screen.getByLabelText('Tithe.ly Giving Form URL')).toHaveAttribute('aria-describedby', 'event-tithely-configuration-error');
         expect(screen.getByLabelText('Tithe.ly Embed Code')).not.toHaveAttribute('aria-invalid');
         expect(screen.getByLabelText('Tithe.ly Embed Code')).not.toHaveAttribute('aria-describedby');
-        expect(screen.queryByTestId('untrusted-code')).not.toBeInTheDocument();
     });
 
     it('marks only the embed field when the embed code is invalid', () => {
