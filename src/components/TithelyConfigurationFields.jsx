@@ -24,7 +24,7 @@ export default function TithelyConfigurationFields({
         [
             TITHELY_ERROR_CODES.MISSING_URL,
             TITHELY_ERROR_CODES.INVALID_URL,
-            TITHELY_ERROR_CODES.INVALID_FORM_ID,
+            TITHELY_ERROR_CODES.INVALID_URL_FORM_ID,
             TITHELY_ERROR_CODES.MISMATCH,
         ].includes(draftStatus.errorCode)
     );
@@ -32,6 +32,7 @@ export default function TithelyConfigurationFields({
         [
             TITHELY_ERROR_CODES.MISSING_EMBED,
             TITHELY_ERROR_CODES.INVALID_EMBED,
+            TITHELY_ERROR_CODES.INVALID_EMBED_FORM_ID,
             TITHELY_ERROR_CODES.MISMATCH,
         ].includes(draftStatus.errorCode)
     );

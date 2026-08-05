@@ -3,7 +3,8 @@ const TITHELY_SCRIPT_URL = 'https://static.tithely.com/give/give.js';
 export const TITHELY_ERROR_CODES = Object.freeze({
     MISSING_URL: 'missing_url',
     INVALID_URL: 'invalid_url',
-    INVALID_FORM_ID: 'invalid_form_id',
+    INVALID_URL_FORM_ID: 'invalid_url_form_id',
+    INVALID_EMBED_FORM_ID: 'invalid_embed_form_id',
     MISSING_EMBED: 'missing_embed',
     INVALID_EMBED: 'invalid_embed',
     MISMATCH: 'mismatch',
@@ -12,7 +13,8 @@ export const TITHELY_ERROR_CODES = Object.freeze({
 const TITHELY_ERROR_MESSAGES = Object.freeze({
     [TITHELY_ERROR_CODES.MISSING_URL]: 'Enter the Tithe.ly giving URL.',
     [TITHELY_ERROR_CODES.INVALID_URL]: 'Use an HTTPS give.tithe.ly giving URL.',
-    [TITHELY_ERROR_CODES.INVALID_FORM_ID]: 'The Tithe.ly giving URL must include one valid form ID.',
+    [TITHELY_ERROR_CODES.INVALID_URL_FORM_ID]: 'The Tithe.ly giving URL must include one valid form ID.',
+    [TITHELY_ERROR_CODES.INVALID_EMBED_FORM_ID]: 'The Tithe.ly embed code must include one valid form ID.',
     [TITHELY_ERROR_CODES.MISSING_EMBED]: 'Paste the official Tithe.ly embed code.',
     [TITHELY_ERROR_CODES.INVALID_EMBED]: 'Use the official Tithe.ly embed button and script.',
     [TITHELY_ERROR_CODES.MISMATCH]: 'Tithe.ly URL and embed code must use the same form ID.',
@@ -65,7 +67,7 @@ export function parseTithelyGivingUrl(value) {
 
     const formIds = url.searchParams.getAll('formId');
     if (formIds.length !== 1 || !isUuid(formIds[0])) {
-        fail(TITHELY_ERROR_CODES.INVALID_FORM_ID);
+        fail(TITHELY_ERROR_CODES.INVALID_URL_FORM_ID);
     }
 
     return { formId: formIds[0], givingUrl: url.toString() };
@@ -114,10 +116,12 @@ export function parseTithelyEmbedCode(embedCode) {
     if (
         hasInvalidButtonAttribute
         || button.getAttribute('class') !== 'tithely-give-button'
-        || !isUuid(button.getAttribute('data-form'))
         || button.children.length
     ) {
         fail(TITHELY_ERROR_CODES.INVALID_EMBED);
+    }
+    if (!isUuid(button.getAttribute('data-form'))) {
+        fail(TITHELY_ERROR_CODES.INVALID_EMBED_FORM_ID);
     }
 
     const scriptAttributes = [...script.attributes];

@@ -54,17 +54,24 @@ describe('Tithe.ly embed parsing', () => {
         `<button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script src="https://static.tithely.com/give/give.js"></script>`,
         `<button class="other" data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
         `<button data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
-        `<button class="tithely-give-button">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
         `<button class="tithely-give-button" data-form="${FORM_ID}" title="Give">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
         `<button class="tithely-give-button" data-form="${FORM_ID}"><span onclick="alert(1)">Give</span></button><script defer src="https://static.tithely.com/give/give.js"></script>`,
         `<title>Unexpected</title><button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
         `<body data-extra="unsafe"><button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js"></script></body>`,
-        `<button class="tithely-give-button" data-form="not-a-uuid">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
         `<button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script defer async src="https://static.tithely.com/give/give.js"></script>`,
         `<button class="tithely-give-button" data-form="${FORM_ID}"><span>Give</span></button><script defer src="https://static.tithely.com/give/give.js"></script>`,
         `<head data-extra="unsafe"></head><button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
     ])('rejects unsafe or incomplete embed code', code => {
         expect(() => parseTithelyEmbedCode(code)).toThrow('Use the official Tithe.ly embed button and script.');
+    });
+
+    it.each([
+        '<button class="tithely-give-button">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>',
+        '<button class="tithely-give-button" data-form="not-a-uuid">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>',
+    ])('reports a missing or invalid embed form ID distinctly', code => {
+        expect(() => parseTithelyEmbedCode(code)).toThrow(
+            'The Tithe.ly embed code must include one valid form ID.',
+        );
     });
 });
 
@@ -120,7 +127,7 @@ describe('Tithe.ly configuration', () => {
         {
             name: 'missing or invalid form ID',
             configuration: { givingUrl: 'https://give.tithe.ly/', embedCode: embedCode() },
-            errorCode: TITHELY_ERROR_CODES.INVALID_FORM_ID,
+            errorCode: TITHELY_ERROR_CODES.INVALID_URL_FORM_ID,
             message: 'The Tithe.ly giving URL must include one valid form ID.',
         },
         {
@@ -134,6 +141,15 @@ describe('Tithe.ly configuration', () => {
             configuration: { givingUrl, embedCode: '<button>Give</button>' },
             errorCode: TITHELY_ERROR_CODES.INVALID_EMBED,
             message: 'Use the official Tithe.ly embed button and script.',
+        },
+        {
+            name: 'missing or invalid embed form ID',
+            configuration: {
+                givingUrl,
+                embedCode: '<button class="tithely-give-button" data-form="not-a-uuid">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>',
+            },
+            errorCode: TITHELY_ERROR_CODES.INVALID_EMBED_FORM_ID,
+            message: 'The Tithe.ly embed code must include one valid form ID.',
         },
         {
             name: 'mismatched form IDs',

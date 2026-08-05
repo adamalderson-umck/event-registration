@@ -123,6 +123,14 @@ describe('TithelyConfigurationFields', () => {
             message: 'Use the official Tithe.ly embed button and script.',
         },
         {
+            name: 'invalid embed form ID',
+            props: {
+                tithelyGivingUrl: GIVING_URL,
+                tithelyEmbedCode: makeEmbedCode('not-a-uuid'),
+            },
+            message: 'The Tithe.ly embed code must include one valid form ID.',
+        },
+        {
             name: 'mismatched form IDs',
             props: { tithelyGivingUrl: GIVING_URL, tithelyEmbedCode: makeEmbedCode(OTHER_FORM_ID) },
             message: 'Tithe.ly URL and embed code must use the same form ID.',
