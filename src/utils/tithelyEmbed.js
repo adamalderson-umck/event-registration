@@ -67,6 +67,7 @@ export function parseTithelyEmbedCode(embedCode) {
 
     if (
         document.head.childNodes.length
+        || document.head.attributes.length
         || document.documentElement.attributes.length
         || document.body.attributes.length
         || hasEventHandler
