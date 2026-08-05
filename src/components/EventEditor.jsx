@@ -9,6 +9,7 @@ import FormPreviewPane from './FormPreviewPane';
 import WaiverSection from './WaiverSection';
 import HeaderImageUpload from './HeaderImageUpload';
 import ThemePicker from './ThemePicker';
+import TithelyConfigurationFields from './TithelyConfigurationFields';
 import { buildEventPayload } from '../utils/eventPayload';
 import { useOrg } from '../context/useOrg';
 import { toSlug, isValidSlug } from '../utils/slugUtils';
@@ -64,6 +65,9 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
         paymentEnabled: preset.paymentEnabled,
         paymentAmount: preset.paymentAmount,
         allowInPersonPayment: preset.allowInPersonPayment,
+        tithelyGivingUrl: '',
+        tithelyEmbedCode: '',
+        tithelyEmbedConfig: null,
         formFields: preset.formFields,
         notifications: {
             organizers: [''],
@@ -118,6 +122,9 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
                         paymentEnabled: !!data.payment_enabled,
                         paymentAmount: data.payment_amount != null ? String(data.payment_amount) : '',
                         allowInPersonPayment: !!data.allow_in_person_payment,
+                        tithelyGivingUrl: data.tithely_giving_url || '',
+                        tithelyEmbedCode: '',
+                        tithelyEmbedConfig: data.tithely_embed_config || null,
                         formFields: loadedFields,
                         notifications: {
                             organizers: data.notifications?.organizers?.length > 0
@@ -237,6 +244,13 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
                 if (!createdEvent?.id) throw new Error('Event was created without a returned ID');
                 setCreatedEventId(createdEvent.id);
             }
+
+            setEvent((previous) => ({
+                ...previous,
+                tithelyGivingUrl: eventData.tithely_giving_url || '',
+                tithelyEmbedCode: '',
+                tithelyEmbedConfig: eventData.tithely_embed_config || null,
+            }));
 
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
@@ -471,6 +485,13 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
                                     <Label htmlFor="event-amount">Amount ($)</Label>
                                     <Input id="event-amount" type="number" step="0.01" value={event.paymentAmount} onChange={(e) => handleChange('paymentAmount', e.target.value)} />
                                 </div>
+                                <TithelyConfigurationFields
+                                    tithelyGivingUrl={event.tithelyGivingUrl}
+                                    tithelyEmbedCode={event.tithelyEmbedCode}
+                                    tithelyEmbedConfig={event.tithelyEmbedConfig}
+                                    allowInPerson={event.allowInPersonPayment}
+                                    onChange={handleChange}
+                                />
                                 <Checkbox
                                     label="Allow payment in person"
                                     checked={event.allowInPersonPayment}
