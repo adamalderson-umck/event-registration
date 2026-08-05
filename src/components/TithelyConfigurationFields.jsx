@@ -4,6 +4,9 @@ import Input from './ui/Input';
 import Label from './ui/Label';
 
 const ERROR_ID = 'event-tithely-configuration-error';
+const URL_ERROR = 'Enter a valid Tithe.ly giving URL.';
+const EMBED_ERROR = 'Paste the official Tithe.ly embed code.';
+const MISMATCH_ERROR = 'Tithe.ly URL and embed code must use the same form ID.';
 
 export default function TithelyConfigurationFields({
     tithelyGivingUrl = '',
@@ -20,6 +23,12 @@ export default function TithelyConfigurationFields({
     const hasError = Boolean(
         draftStatus.error && (tithelyGivingUrl || tithelyEmbedCode || tithelyEmbedConfig),
     );
+    const urlHasError = hasError && (
+        draftStatus.error === URL_ERROR || draftStatus.error === MISMATCH_ERROR
+    );
+    const embedHasError = hasError && (
+        draftStatus.error === EMBED_ERROR || draftStatus.error === MISMATCH_ERROR
+    );
 
     return (
         <div className="space-y-3">
@@ -31,8 +40,8 @@ export default function TithelyConfigurationFields({
                     value={tithelyGivingUrl}
                     onChange={(event) => onChange('tithelyGivingUrl', event.target.value)}
                     placeholder="https://give.tithe.ly/?formId=..."
-                    aria-invalid={hasError ? 'true' : undefined}
-                    aria-describedby={hasError ? ERROR_ID : undefined}
+                    aria-invalid={urlHasError ? 'true' : undefined}
+                    aria-describedby={urlHasError ? ERROR_ID : undefined}
                 />
             </div>
             <div>
@@ -44,8 +53,8 @@ export default function TithelyConfigurationFields({
                     rows={4}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary resize-y font-mono text-xs"
                     placeholder="Paste the official Tithe.ly embed code"
-                    aria-invalid={hasError ? 'true' : undefined}
-                    aria-describedby={hasError ? ERROR_ID : undefined}
+                    aria-invalid={embedHasError ? 'true' : undefined}
+                    aria-describedby={embedHasError ? ERROR_ID : undefined}
                 />
             </div>
             <p className="text-xs text-slate-500">
