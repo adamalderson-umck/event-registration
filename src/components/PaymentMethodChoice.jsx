@@ -4,19 +4,20 @@ const PAYMENT_METHOD_LABELS = {
     tithely: 'Tithe.ly',
     in_person: 'Pay in Person',
 };
+const ERROR_ID = 'payment-method-error';
 
 export default function PaymentMethodChoice({
-    availableMethods = [],
+    methods = [],
     value = '',
     onChange,
     error,
 }) {
-    const methods = availableMethods.filter((method) => PAYMENT_METHOD_LABELS[method]);
+    const availableMethods = methods.filter((method) => PAYMENT_METHOD_LABELS[method]);
 
-    if (methods.length === 0) return null;
+    if (availableMethods.length === 0) return null;
 
-    if (methods.length === 1) {
-        const method = methods[0];
+    if (availableMethods.length === 1) {
+        const method = availableMethods[0];
         const label = PAYMENT_METHOD_LABELS[method];
 
         return (
@@ -36,7 +37,7 @@ export default function PaymentMethodChoice({
         <fieldset className="rounded-lg border border-slate-200 p-4">
             <legend className="px-1 text-sm font-semibold text-slate-800">Payment Method</legend>
             <div className="mt-2 space-y-3">
-                {methods.map((method) => (
+                {availableMethods.map((method) => (
                     <label key={method} className="flex cursor-pointer items-start gap-3 text-sm text-slate-700">
                         <input
                             type="radio"
@@ -44,6 +45,8 @@ export default function PaymentMethodChoice({
                             value={method}
                             checked={value === method}
                             onChange={(event) => onChange?.(event.target.value)}
+                            aria-invalid={error ? 'true' : undefined}
+                            aria-describedby={error ? ERROR_ID : undefined}
                             className="mt-0.5 h-4 w-4 border-slate-300 text-primary focus:ring-primary"
                         />
                         <span>
@@ -57,7 +60,7 @@ export default function PaymentMethodChoice({
                     </label>
                 ))}
             </div>
-            {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
+            {error && <p id={ERROR_ID} role="alert" className="mt-3 text-sm text-danger">{error}</p>}
         </fieldset>
     );
 }

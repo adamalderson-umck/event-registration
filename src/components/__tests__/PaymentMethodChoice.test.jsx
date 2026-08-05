@@ -6,13 +6,13 @@ import PaymentMethodChoice from '../PaymentMethodChoice';
 
 describe('PaymentMethodChoice', () => {
     it('renders nothing when no payment methods are available', () => {
-        const { container } = render(<PaymentMethodChoice availableMethods={[]} />);
+        const { container } = render(<PaymentMethodChoice methods={[]} />);
 
         expect(container).toBeEmptyDOMElement();
     });
 
     it('renders an explanatory summary for one available method', () => {
-        render(<PaymentMethodChoice availableMethods={['in_person']} />);
+        render(<PaymentMethodChoice methods={['in_person']} />);
 
         expect(screen.getByRole('heading', { name: 'Payment Method' })).toBeInTheDocument();
         expect(screen.getByText('Payment method: Pay in Person.')).toBeInTheDocument();
@@ -24,7 +24,7 @@ describe('PaymentMethodChoice', () => {
         const onChange = vi.fn();
         render(
             <PaymentMethodChoice
-                availableMethods={['tithely', 'in_person']}
+                methods={['tithely', 'in_person']}
                 value="tithely"
                 onChange={onChange}
             />,
@@ -41,11 +41,26 @@ describe('PaymentMethodChoice', () => {
     it('renders a supplied validation error as an alert', () => {
         render(
             <PaymentMethodChoice
-                availableMethods={['tithely', 'in_person']}
+                methods={['tithely', 'in_person']}
                 error="Choose a payment method"
             />,
         );
 
-        expect(screen.getByRole('alert')).toHaveTextContent('Choose a payment method');
+        const error = screen.getByRole('alert');
+        expect(error).toHaveTextContent('Choose a payment method');
+        expect(error).toHaveAttribute('id', 'payment-method-error');
+        for (const radio of screen.getAllByRole('radio')) {
+            expect(radio).toHaveAttribute('aria-invalid', 'true');
+            expect(radio).toHaveAttribute('aria-describedby', 'payment-method-error');
+        }
+    });
+
+    it('does not mark radio choices invalid when there is no validation error', () => {
+        render(<PaymentMethodChoice methods={['tithely', 'in_person']} />);
+
+        for (const radio of screen.getAllByRole('radio')) {
+            expect(radio).not.toHaveAttribute('aria-invalid');
+            expect(radio).not.toHaveAttribute('aria-describedby');
+        }
     });
 });
