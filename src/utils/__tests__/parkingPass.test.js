@@ -150,12 +150,39 @@ describe('parking passes', () => {
         expect(printWindow.print).not.toHaveBeenCalled();
 
         resolveFonts();
+        await Promise.resolve();
+        expect(printWindow.focus).not.toHaveBeenCalled();
+        expect(printWindow.print).not.toHaveBeenCalled();
+
         resolveImage();
         await result;
 
         expect(printWindow.focus).toHaveBeenCalledOnce();
         expect(printWindow.print).toHaveBeenCalledOnce();
         expect(printWindow.focus.mock.invocationCallOrder[0]).toBeLessThan(printWindow.print.mock.invocationCallOrder[0]);
+    });
+
+    it('prints when an incomplete image errors after fonts are ready', async () => {
+        let resolveFonts;
+        let resolveImageError;
+        const fontsReady = new Promise((resolve) => { resolveFonts = resolve; });
+        const image = {
+            complete: false,
+            addEventListener: vi.fn((eventName, listener) => {
+                if (eventName === 'error') resolveImageError = listener;
+            }),
+        };
+        const printWindow = makePrintWindow({ fontsReady, images: [image] });
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        resolveFonts();
+        resolveImageError();
+        await result;
+
+        expect(printWindow.focus).toHaveBeenCalledOnce();
+        expect(printWindow.print).toHaveBeenCalledOnce();
     });
 
     it('prints after the 1500ms fallback when an asset never settles', async () => {
