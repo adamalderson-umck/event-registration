@@ -6,11 +6,15 @@ import RegistrationPaymentStep from './RegistrationPaymentStep';
 import WaitlistNotice from './WaitlistNotice';
 import WaiverSignatureStep from './WaiverSignatureStep';
 import FormPreview from './FormPreview';
+import PaymentMethodChoice from './PaymentMethodChoice';
 import Card from './ui/Card';
 import { evaluateCondition, splitIntoPages } from '../utils/formConditions';
+import { getAvailablePaymentMethods } from '../utils/tithelyEmbed';
 
 export default function EventRegistrationForm({ eventId, orgId }) {
     const [event, setEvent] = useState(null);
+    const [availablePaymentMethods, setAvailablePaymentMethods] = useState([]);
+    const [paymentMethod, setPaymentMethod] = useState('');
     const [formData, setFormData] = useState({});
     const [errors, setErrors] = useState({});
     const [loading, setLoading] = useState(true);
@@ -59,6 +63,9 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                     return;
                 }
 
+                const methods = getAvailablePaymentMethods(data);
+                setAvailablePaymentMethods(methods);
+                setPaymentMethod(methods.length === 1 ? methods[0] : '');
                 setEvent(data);
             } catch (err) {
                 console.error('Error fetching event:', err);
@@ -177,6 +184,9 @@ export default function EventRegistrationForm({ eventId, orgId }) {
 
         // Waiver validation — only on final submit (fieldsToValidate is null)
         const newSigErrors = {};
+        if (!fieldsToValidate && availablePaymentMethods.length > 1 && !paymentMethod) {
+            newErrors._payment_method = 'Choose a payment method';
+        }
         if (!fieldsToValidate && Array.isArray(event?.waivers)) {
             for (const waiver of event.waivers) {
                 const sig = signaturesMap[waiver.id] || {};
@@ -286,7 +296,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 form_data: cleanFormData,
                 status: 'pending', // Trigger will set to confirmed/waitlisted
                 payment_status: event.payment_enabled ? 'pending' : 'not_required',
-                payment_method: null,
+                payment_method: paymentMethod || availablePaymentMethods[0] || null,
             };
 
             // Build signature_records[] for all waivers
@@ -343,11 +353,10 @@ export default function EventRegistrationForm({ eventId, orgId }) {
             if (!created) throw new Error('Registration was created without a returned record.');
 
             setCreatedRegistration(created);
-            const requiresParkingPayment =
+            const requiresTithelyPayment =
                 created.status === 'confirmed'
-                && event.event_type === 'parking'
-                && event.payment_enabled === true;
-            setPhase(requiresParkingPayment ? 'payment' : 'success');
+                && created.payment_method === 'tithely';
+            setPhase(requiresTithelyPayment ? 'payment' : 'success');
         } catch (err) {
             console.error('Error submitting registration:', err);
             setErrors({ _form: 'Failed to submit registration. Please try again.' });
@@ -364,6 +373,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         setCurrentPage(0);
         setSignaturesMap({});
         setSignaturesErrors({});
+        setPaymentMethod(availablePaymentMethods.length === 1 ? availablePaymentMethods[0] : '');
     };
 
     // Loading state
@@ -467,6 +477,22 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                             </div>
                         )
                         : null
+                }
+                paymentSlot={
+                    <PaymentMethodChoice
+                        methods={availablePaymentMethods}
+                        value={paymentMethod}
+                        onChange={(method) => {
+                            setPaymentMethod(method);
+                            setErrors((prev) => {
+                                if (!prev._payment_method) return prev;
+                                const next = { ...prev };
+                                delete next._payment_method;
+                                return next;
+                            });
+                        }}
+                        error={errors._payment_method}
+                    />
                 }
                 captchaSlot={
                     TURNSTILE_SITE_KEY && currentPage === pages.length - 1
