@@ -33,7 +33,6 @@ describe('parking passes', () => {
     it('builds a printable pass with only the approved information', () => {
         const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' });
 
-        expect(html).toContain('@page { size: 2.833in 11in; margin: 0; }');
         expect(html).toContain('&lt;ABC&amp;123&gt;');
         expect(html).toContain('2024 Blue Honda Civic');
         expect(html).toContain('VALID PARKING PASS');
@@ -43,6 +42,17 @@ describe('parking passes', () => {
         expect(html).not.toContain('driver@example.com');
         expect(html).not.toContain('123 Private Drive');
         expect(html).not.toContain('Private Insurance Co.');
+    });
+
+    it('places one landscape pass in the top third of a portrait Letter sheet', () => {
+        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' });
+
+        expect(html).toContain('@page { size: letter portrait; margin: 0; }');
+        expect(html).toContain('html, body { width: 8.5in; height: 11in; margin: 0; }');
+        expect(html).toContain('.pass { width: 8.5in; height: 3.66in;');
+        expect(html).toContain('grid-template-columns: 1fr 1.4fr 1fr;');
+        expect(html).toContain('<body>\n<main class="pass">');
+        expect(html).not.toContain('align-items: center; justify-content: center;');
     });
 
     it('does not open a window for a registration that cannot print a pass', () => {

@@ -51,11 +51,15 @@ export function buildParkingPassHtml(registration, event, organization) {
     return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${eventTitle} Parking Pass</title>
 <style>
-@page { size: 2.833in 11in; margin: 0; }
-html, body { width: 2.833in; height: 11in; margin: 0; }
-body { box-sizing: border-box; padding: .22in; font-family: Arial, sans-serif; color: #111; }
+@page { size: letter portrait; margin: 0; }
+html, body { width: 8.5in; height: 11in; margin: 0; }
+body { box-sizing: border-box; font-family: Arial, sans-serif; color: #111; }
 * { box-sizing: border-box; }
-.pass { width: 2.393in; height: 10.56in; border: 2px solid #111; padding: .18in .12in; text-align: center; display: flex; flex-direction: column; justify-content: space-between; }
+.pass { width: 8.5in; height: 3.66in; padding: .22in; }
+.pass-content { width: 100%; height: 100%; border: 2px solid #111; padding: .18in .22in; display: grid; grid-template-columns: 1fr 1.4fr 1fr; align-items: center; gap: .18in; }
+.identity { text-align: left; }
+.vehicle-block { text-align: center; }
+.details { text-align: right; }
 .organization { font-size: 10pt; font-weight: 700; }
 .event { font-size: 9pt; margin-top: .08in; }
 .valid { font-size: 16pt; font-weight: 800; letter-spacing: .03in; margin: .3in 0; }
@@ -64,9 +68,11 @@ body { box-sizing: border-box; padding: .22in; font-family: Arial, sans-serif; c
 .dates, .reference, .direction { font-size: 8pt; line-height: 1.35; }
 </style></head><body>
 <main class="pass">
-  <div><div class="organization">${organizationName}</div><div class="event">${eventTitle}</div></div>
-  <div><div class="valid">VALID PARKING PASS</div><div class="plate">${escapeHtml(licensePlate)}</div><div class="vehicle">${escapeHtml(vehicle)}</div></div>
-  <div><div class="dates">${escapeHtml(dates)}</div><div class="reference">Pass reference: ${registrationId}</div><div class="direction">Display this pass clearly in your vehicle.</div></div>
+  <div class="pass-content">
+    <div class="identity"><div class="organization">${organizationName}</div><div class="event">${eventTitle}</div></div>
+    <div class="vehicle-block"><div class="valid">VALID PARKING PASS</div><div class="plate">${escapeHtml(licensePlate)}</div><div class="vehicle">${escapeHtml(vehicle)}</div></div>
+    <div class="details"><div class="dates">${escapeHtml(dates)}</div><div class="reference">Pass reference: ${registrationId}</div><div class="direction">Display this pass clearly in your vehicle.</div></div>
+  </div>
 </main></body></html>`;
 }
 
