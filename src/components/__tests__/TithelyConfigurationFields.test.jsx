@@ -35,6 +35,10 @@ describe('TithelyConfigurationFields', () => {
 
         expect(screen.getByText(`Configured form: ${FORM_ID}`)).toBeInTheDocument();
         expect(screen.getByLabelText('Tithe.ly Embed Code')).toHaveValue('');
+        expect(screen.getByLabelText('Tithe.ly Giving Form URL')).not.toHaveAttribute('aria-invalid');
+        expect(screen.getByLabelText('Tithe.ly Giving Form URL')).not.toHaveAttribute('aria-describedby');
+        expect(screen.getByLabelText('Tithe.ly Embed Code')).not.toHaveAttribute('aria-invalid');
+        expect(screen.getByLabelText('Tithe.ly Embed Code')).not.toHaveAttribute('aria-describedby');
     });
 
     it('keeps in-person payment available when the draft configuration is invalid', () => {
@@ -47,7 +51,13 @@ describe('TithelyConfigurationFields', () => {
             />,
         );
 
-        expect(screen.getByRole('alert')).toHaveTextContent('Pay in Person remains available');
+        const alert = screen.getByRole('alert');
+        expect(alert).toHaveAttribute('id', 'event-tithely-configuration-error');
+        expect(alert).toHaveTextContent('Pay in Person remains available');
+        expect(screen.getByLabelText('Tithe.ly Giving Form URL')).toHaveAttribute('aria-invalid', 'true');
+        expect(screen.getByLabelText('Tithe.ly Giving Form URL')).toHaveAttribute('aria-describedby', 'event-tithely-configuration-error');
+        expect(screen.getByLabelText('Tithe.ly Embed Code')).toHaveAttribute('aria-invalid', 'true');
+        expect(screen.getByLabelText('Tithe.ly Embed Code')).toHaveAttribute('aria-describedby', 'event-tithely-configuration-error');
         expect(screen.queryByTestId('untrusted-code')).not.toBeInTheDocument();
     });
 });

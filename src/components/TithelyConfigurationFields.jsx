@@ -3,6 +3,8 @@ import { getTithelyDraftStatus } from '../utils/tithelyEmbed';
 import Input from './ui/Input';
 import Label from './ui/Label';
 
+const ERROR_ID = 'event-tithely-configuration-error';
+
 export default function TithelyConfigurationFields({
     tithelyGivingUrl = '',
     tithelyEmbedCode = '',
@@ -15,6 +17,9 @@ export default function TithelyConfigurationFields({
         embedCode: tithelyEmbedCode,
         existingEmbedConfig: tithelyEmbedConfig,
     });
+    const hasError = Boolean(
+        draftStatus.error && (tithelyGivingUrl || tithelyEmbedCode || tithelyEmbedConfig),
+    );
 
     return (
         <div className="space-y-3">
@@ -26,6 +31,8 @@ export default function TithelyConfigurationFields({
                     value={tithelyGivingUrl}
                     onChange={(event) => onChange('tithelyGivingUrl', event.target.value)}
                     placeholder="https://give.tithe.ly/?formId=..."
+                    aria-invalid={hasError ? 'true' : undefined}
+                    aria-describedby={hasError ? ERROR_ID : undefined}
                 />
             </div>
             <div>
@@ -37,6 +44,8 @@ export default function TithelyConfigurationFields({
                     rows={4}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary resize-y font-mono text-xs"
                     placeholder="Paste the official Tithe.ly embed code"
+                    aria-invalid={hasError ? 'true' : undefined}
+                    aria-describedby={hasError ? ERROR_ID : undefined}
                 />
             </div>
             <p className="text-xs text-slate-500">
@@ -45,8 +54,8 @@ export default function TithelyConfigurationFields({
             {draftStatus.configured && !tithelyEmbedCode.trim() && (
                 <p className="text-xs text-success">Configured form: {draftStatus.embedConfig.formId}</p>
             )}
-            {draftStatus.error && (tithelyGivingUrl || tithelyEmbedCode || tithelyEmbedConfig) && (
-                <p role="alert" className="text-xs text-danger">
+            {hasError && (
+                <p id={ERROR_ID} role="alert" className="text-xs text-danger">
                     {draftStatus.error}{allowInPerson ? ' Pay in Person remains available.' : ''}
                 </p>
             )}

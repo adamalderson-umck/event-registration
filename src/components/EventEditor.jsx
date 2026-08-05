@@ -206,6 +206,12 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
     };
 
     const handleSave = async () => {
+        const submittedTithelyConfiguration = {
+            givingUrl: event.tithelyGivingUrl,
+            embedCode: event.tithelyEmbedCode,
+            embedConfig: event.tithelyEmbedConfig,
+        };
+
         if (!event.title.trim()) {
             setError('Event title is required');
             return;
@@ -245,12 +251,22 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
                 setCreatedEventId(createdEvent.id);
             }
 
-            setEvent((previous) => ({
-                ...previous,
-                tithelyGivingUrl: eventData.tithely_giving_url || '',
-                tithelyEmbedCode: '',
-                tithelyEmbedConfig: eventData.tithely_embed_config || null,
-            }));
+            setEvent((previous) => {
+                const configurationIsUnchanged = (
+                    previous.tithelyGivingUrl === submittedTithelyConfiguration.givingUrl
+                    && previous.tithelyEmbedCode === submittedTithelyConfiguration.embedCode
+                    && previous.tithelyEmbedConfig === submittedTithelyConfiguration.embedConfig
+                );
+
+                if (!configurationIsUnchanged) return previous;
+
+                return {
+                    ...previous,
+                    tithelyGivingUrl: eventData.tithely_giving_url || '',
+                    tithelyEmbedCode: '',
+                    tithelyEmbedConfig: eventData.tithely_embed_config || null,
+                };
+            });
 
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
