@@ -29,8 +29,12 @@ function registration(overrides = {}) {
     };
 }
 
+function makePrintWindow({ fontsReady = Promise.resolve(), images = [] } = {}) {
+    return { document: { write: vi.fn(), close: vi.fn(), fonts: { ready: fontsReady }, images }, focus: vi.fn(), print: vi.fn() };
+}
+
 describe('parking passes', () => {
-    afterEach(() => vi.restoreAllMocks());
+    afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
     it('builds the approved rotated monument document with only approved information', () => {
         const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, assets);
@@ -124,6 +128,49 @@ describe('parking passes', () => {
         expect(() => printParkingPass(registration({ payment_status: 'pending' }), event, 'Kent Methodist Church'))
             .toThrow('Only valid parking registrations can be printed.');
         expect(open).not.toHaveBeenCalled();
+    });
+
+    it('waits for fonts and images before focusing and printing', async () => {
+        let resolveFonts;
+        let resolveImage;
+        const fontsReady = new Promise((resolve) => { resolveFonts = resolve; });
+        const image = {
+            complete: false,
+            addEventListener: vi.fn((eventName, listener) => {
+                if (eventName === 'load') resolveImage = listener;
+            }),
+        };
+        const printWindow = makePrintWindow({ fontsReady, images: [image] });
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        expect(result).toBeInstanceOf(Promise);
+        expect(printWindow.focus).not.toHaveBeenCalled();
+        expect(printWindow.print).not.toHaveBeenCalled();
+
+        resolveFonts();
+        resolveImage();
+        await result;
+
+        expect(printWindow.focus).toHaveBeenCalledOnce();
+        expect(printWindow.print).toHaveBeenCalledOnce();
+        expect(printWindow.focus.mock.invocationCallOrder[0]).toBeLessThan(printWindow.print.mock.invocationCallOrder[0]);
+    });
+
+    it('prints after the 1500ms fallback when an asset never settles', async () => {
+        vi.useFakeTimers();
+        const printWindow = makePrintWindow({ fontsReady: new Promise(() => {}) });
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        await vi.advanceTimersByTimeAsync(1499);
+        expect(printWindow.print).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(1);
+        await result;
+        expect(printWindow.print).toHaveBeenCalledOnce();
     });
 
     it('requires a license plate before building a pass', () => {

@@ -110,6 +110,36 @@ body { box-sizing: border-box; font-family: 'Source Sans 3', Arial, sans-serif; 
 </main></body></html>`;
 }
 
+const PRINT_ASSET_TIMEOUT_MS = 1500;
+
+function waitForImage(image) {
+    if (image.complete) return Promise.resolve();
+
+    return new Promise((resolve) => {
+        image.addEventListener('load', resolve, { once: true });
+        image.addEventListener('error', resolve, { once: true });
+    });
+}
+
+function settleWithin(promise, timeoutMs) {
+    return new Promise((resolve) => {
+        const timeoutId = window.setTimeout(resolve, timeoutMs);
+
+        Promise.resolve(promise).catch(() => undefined).then(() => {
+            window.clearTimeout(timeoutId);
+            resolve();
+        });
+    });
+}
+
+function waitForPrintAssets(printWindow) {
+    const document = printWindow.document;
+    const fontsReady = document.fonts?.ready ?? Promise.resolve();
+    const imagesReady = Promise.all(Array.from(document.images ?? [], waitForImage));
+
+    return settleWithin(Promise.all([fontsReady, imagesReady]), PRINT_ASSET_TIMEOUT_MS);
+}
+
 export function printParkingPass(registration, event, organization) {
     const html = buildParkingPassHtml(registration, event, organization);
     const printWindow = window.open('', '_blank', 'width=408,height=1200');
@@ -119,6 +149,8 @@ export function printParkingPass(registration, event, organization) {
 
     printWindow.document.write(html);
     printWindow.document.close();
-    printWindow.focus();
-    window.setTimeout(() => printWindow.print(), 250);
+    return waitForPrintAssets(printWindow).then(() => {
+        printWindow.focus();
+        printWindow.print();
+    });
 }
