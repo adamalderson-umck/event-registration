@@ -99,6 +99,15 @@ describe('parking passes', () => {
         expect(html).not.toContain("');}.injected{color:red}</style><img src=x onerror=alert(1)>");
     });
 
+    it('serializes control characters in font URLs as terminated CSS hex escapes', () => {
+        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, {
+            ...assets,
+            fontUrl: '/assets/font.woff2?marker=\u0001&v=1',
+        });
+
+        expect(html).toContain("src: url('/assets/font.woff2?marker=\\1 &v=1') format('woff2');");
+    });
+
     it('keeps hostile logo URLs inside escaped image attributes', () => {
         const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, {
             ...assets,

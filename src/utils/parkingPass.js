@@ -22,10 +22,17 @@ function escapeHtml(value) {
 }
 
 function escapeCssUrl(value) {
-    return String(value ?? '')
-        .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\'")
-        .replace(/[\0-\x1F\x7F<]/g, (character) => `\\${character.codePointAt(0).toString(16)} `);
+    return Array.from(String(value ?? ''), (character) => {
+        const codePoint = character.codePointAt(0);
+
+        if (character === '\\') return '\\\\';
+        if (character === "'") return "\\'";
+        if (character === '<' || codePoint <= 0x1F || codePoint === 0x7F) {
+            return `\\${codePoint.toString(16)} `;
+        }
+
+        return character;
+    }).join('');
 }
 
 function formatDate(value) {
