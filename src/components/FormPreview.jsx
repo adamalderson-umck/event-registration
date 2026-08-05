@@ -23,6 +23,7 @@ import { resolveTheme, resolveHeaderImage } from '../constants/themePresets';
  * @param {boolean} [props.submitting]   - Show loading state on submit button
  * @param {React.ReactNode} [props.waiverSlot]   - Waiver component to render on last page
  * @param {React.ReactNode} [props.captchaSlot]  - CAPTCHA widget to render on last page
+ * @param {React.ReactNode} [props.paymentSlot]  - Payment-method component to render on last page
  * @param {React.ReactNode} [props.beforeFields] - Content rendered before form fields (e.g. WaitlistNotice)
  */
 export default function FormPreview({
@@ -38,6 +39,7 @@ export default function FormPreview({
     submitting = false,
     waiverSlot,
     captchaSlot,
+    paymentSlot,
     beforeFields,
 }) {
     if (!event) return null;
@@ -212,6 +214,7 @@ export default function FormPreview({
 
                     {/* Waiver — only on last page */}
                     {isLastPage && waiverSlot}
+                    {isLastPage && paymentSlot}
 
                     {/* CAPTCHA — only on last page */}
                     {isLastPage && captchaSlot}

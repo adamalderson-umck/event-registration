@@ -10,7 +10,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 
@@ -59,13 +59,9 @@ vi.mock('../RegistrationPaymentStep', () => ({
         <section>
             <h2>Payment Required</h2>
             <button
-                onClick={() => onComplete({
-                    ...registration,
-                    payment_status: 'paid',
-                    payment_method: 'paypal',
-                })}
+                onClick={() => onComplete(registration)}
             >
-                Complete Mock Payment
+                Finish Mock Tithe.ly
             </button>
         </section>
     ),
@@ -74,6 +70,8 @@ vi.mock('../RegistrationPaymentStep', () => ({
 // Import AFTER mock is registered
 import EventRegistrationForm from '../EventRegistrationForm';
 import { supabase } from '../../services/supabase';
+
+const TITHELY_FORM_ID = '123e4567-e89b-42d3-a456-426614174000';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function makeEvent(overrides = {}) {
@@ -133,6 +131,14 @@ async function completeRequiredFields({ firstName = 'John', lastName = 'Doe', em
     await userEvent.type(await screen.findByLabelText(/first name/i), firstName);
     await userEvent.type(screen.getByLabelText(/last name/i), lastName);
     await userEvent.type(screen.getByLabelText(/email/i), email);
+}
+
+function deferred() {
+    let resolve;
+    const promise = new Promise((resolvePromise) => {
+        resolve = resolvePromise;
+    });
+    return { promise, resolve };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -195,13 +201,17 @@ describe('EventRegistrationForm', () => {
         expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
     });
 
-    it('routes a confirmed paid parking registration through the payment phase', async () => {
+    it('routes a confirmed standard registration with Tithe.ly through the payment phase', async () => {
         setupMocks(makeEvent({
-            event_type: 'parking',
             payment_enabled: true,
             payment_amount: 100,
-            allow_in_person_payment: true,
+            tithely_giving_url: `https://give.tithe.ly/?formId=${TITHELY_FORM_ID}`,
+            tithely_embed_config: { formId: TITHELY_FORM_ID },
         }));
+        supabase._mocks.mockInsertSingle.mockResolvedValue({
+            data: { id: 'registration-1', status: 'confirmed', payment_status: 'pending', payment_method: 'tithely' },
+            error: null,
+        });
         render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
 
         await completeRequiredFields();
@@ -209,17 +219,90 @@ describe('EventRegistrationForm', () => {
 
         expect(await screen.findByText(/payment required/i)).toBeInTheDocument();
         expect(supabase._mocks.mockInsertSingle).toHaveBeenCalledTimes(1);
+        expect(supabase._mocks.mockInsert).toHaveBeenCalledWith(expect.objectContaining({ payment_method: 'tithely' }));
 
-        fireEvent.click(screen.getByRole('button', { name: /complete mock payment/i }));
-        expect(await screen.findByText(/^valid$/i)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /finish mock tithe\.ly/i }));
+        expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
+        expect(screen.getByText(/tithe\.ly payment is pending administrator verification/i)).toBeInTheDocument();
     });
 
-    it('uses the returned waitlist status and skips parking payment despite stale capacity counters', async () => {
+    it('routes a confirmed parking registration through Tithe.ly and keeps it pending after local completion', async () => {
         setupMocks(makeEvent({
             event_type: 'parking',
             payment_enabled: true,
             payment_amount: 100,
+            tithely_giving_url: `https://give.tithe.ly/?formId=${TITHELY_FORM_ID}`,
+            tithely_embed_config: { formId: TITHELY_FORM_ID },
+        }));
+        supabase._mocks.mockInsertSingle.mockResolvedValue({
+            data: { id: 'registration-1', status: 'confirmed', payment_status: 'pending', payment_method: 'tithely' },
+            error: null,
+        });
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields();
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+        expect(await screen.findByText(/payment required/i)).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /finish mock tithe\.ly/i }));
+        expect(await screen.findByText(/tithe\.ly payment is pending administrator verification/i)).toBeInTheDocument();
+    });
+
+    it('requires an explicit method selection when Tithe.ly and Pay in Person are available', async () => {
+        setupMocks(makeEvent({
+            payment_enabled: true,
             allow_in_person_payment: true,
+            tithely_giving_url: `https://give.tithe.ly/?formId=${TITHELY_FORM_ID}`,
+            tithely_embed_config: { formId: TITHELY_FORM_ID },
+        }));
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields();
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Choose a payment method');
+        expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('radio', { name: /pay in person/i }));
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+        await waitFor(() => expect(supabase._mocks.mockInsert).toHaveBeenCalledWith(expect.objectContaining({ payment_method: 'in_person' })));
+    });
+
+    it('blocks a payment-enabled event with no viable payment method before inserting', async () => {
+        setupMocks(makeEvent({ payment_enabled: true }));
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields();
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+
+        expect(await screen.findByText('No usable payment method is configured for this event.')).toBeInTheDocument();
+        expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
+    });
+
+    it('submits an in-person-only payment as pending without the Tithe.ly handoff', async () => {
+        setupMocks(makeEvent({ payment_enabled: true, allow_in_person_payment: true }));
+        supabase._mocks.mockInsertSingle.mockResolvedValue({
+            data: { id: 'registration-1', status: 'confirmed', payment_status: 'pending', payment_method: 'in_person' },
+            error: null,
+        });
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields();
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+
+        expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
+        expect(screen.queryByText(/payment required/i)).not.toBeInTheDocument();
+        expect(screen.getByText(/payment is pending.*pay in person/i)).toBeInTheDocument();
+        expect(supabase._mocks.mockInsert).toHaveBeenCalledWith(expect.objectContaining({ payment_method: 'in_person' }));
+    });
+
+    it('uses the returned waitlist status and skips Tithe.ly payment despite stale capacity counters', async () => {
+        setupMocks(makeEvent({
+            event_type: 'parking',
+            payment_enabled: true,
+            payment_amount: 100,
+            tithely_giving_url: `https://give.tithe.ly/?formId=${TITHELY_FORM_ID}`,
+            tithely_embed_config: { formId: TITHELY_FORM_ID },
             capacity: 10,
             registration_count: 1,
             waitlist_enabled: true,
@@ -229,7 +312,7 @@ describe('EventRegistrationForm', () => {
                 id: 'registration-1',
                 status: 'waitlisted',
                 payment_status: 'pending',
-                payment_method: null,
+                payment_method: 'tithely',
             },
             error: null,
         });
@@ -292,6 +375,29 @@ describe('EventRegistrationForm', () => {
 
         render(<EventRegistrationForm eventId="evt-999" orgId="org-1" />);
         expect(await screen.findByText(/event not found/i)).toBeInTheDocument();
+    });
+
+    it('ignores a stale event fetch after the requested event changes', async () => {
+        setupMocks();
+        const stale = deferred();
+        const currentEvent = makeEvent({ id: 'evt-2', title: 'Current Event' });
+        supabase._mocks.mockSingle
+            .mockImplementationOnce(() => stale.promise)
+            .mockResolvedValueOnce({ data: currentEvent, error: null });
+
+        const { rerender } = render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+        rerender(<EventRegistrationForm eventId="evt-2" orgId="org-1" />);
+
+        expect(await screen.findByRole('heading', { name: 'Current Event' })).toBeInTheDocument();
+
+        await act(async () => {
+            stale.resolve({ data: makeEvent({ title: 'Stale Event' }), error: null });
+        });
+
+        await waitFor(() => {
+            expect(screen.queryByRole('heading', { name: 'Stale Event' })).not.toBeInTheDocument();
+            expect(screen.getByRole('heading', { name: 'Current Event' })).toBeInTheDocument();
+        });
     });
 
     it('shows "no longer accepting" when event status is not active', async () => {

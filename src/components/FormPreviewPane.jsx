@@ -30,6 +30,9 @@ export default function FormPreviewPane({ eventState }) {
         registration_count: 0,
         waitlist_enabled: eventState.waitlistEnabled || false,
         payment_enabled: eventState.paymentEnabled || false,
+        allow_in_person_payment: eventState.allowInPersonPayment ?? false,
+        tithely_giving_url: eventState.tithelyGivingUrl ?? null,
+        tithely_embed_config: eventState.tithelyEmbedConfig ?? null,
     }), [eventState]);
 
     // Reset page when fields change and page would be out of bounds
