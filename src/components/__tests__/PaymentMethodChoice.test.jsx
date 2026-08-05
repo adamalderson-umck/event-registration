@@ -11,6 +11,12 @@ describe('PaymentMethodChoice', () => {
         expect(container).toBeEmptyDOMElement();
     });
 
+    it('renders a payment-method error when no viable method is available', () => {
+        render(<PaymentMethodChoice methods={[]} error="Choose a payment method" />);
+
+        expect(screen.getByRole('alert')).toHaveTextContent('Choose a payment method');
+    });
+
     it('renders an explanatory summary for one available method', () => {
         render(<PaymentMethodChoice methods={['in_person']} />);
 

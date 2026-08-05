@@ -36,6 +36,14 @@ export default function EventRegistrationForm({ eventId, orgId }) {
 
     // Fetch event data
     useEffect(() => {
+        let cancelled = false;
+
+        setEvent(null);
+        setAvailablePaymentMethods([]);
+        setPaymentMethod('');
+        setFetchError('');
+        setLoading(Boolean(eventId && orgId));
+
         const fetchEvent = async () => {
             try {
                 const { data, error } = await supabase
@@ -44,6 +52,8 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                     .eq('id', eventId)
                     .eq('org_id', orgId)
                     .single();
+
+                if (cancelled) return;
 
                 if (error || !data) {
                     setFetchError('Event not found');
@@ -68,14 +78,18 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 setPaymentMethod(methods.length === 1 ? methods[0] : '');
                 setEvent(data);
             } catch (err) {
+                if (cancelled) return;
                 console.error('Error fetching event:', err);
                 setFetchError('Failed to load event');
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
 
         if (eventId && orgId) fetchEvent();
+        return () => {
+            cancelled = true;
+        };
     }, [eventId, orgId]);
 
     // Load Cloudflare Turnstile script (only if site key is configured)
@@ -184,7 +198,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
 
         // Waiver validation — only on final submit (fieldsToValidate is null)
         const newSigErrors = {};
-        if (!fieldsToValidate && availablePaymentMethods.length > 1 && !paymentMethod) {
+        if (!fieldsToValidate && event?.payment_enabled && !paymentMethod) {
             newErrors._payment_method = 'Choose a payment method';
         }
         if (!fieldsToValidate && Array.isArray(event?.waivers)) {
@@ -296,7 +310,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 form_data: cleanFormData,
                 status: 'pending', // Trigger will set to confirmed/waitlisted
                 payment_status: event.payment_enabled ? 'pending' : 'not_required',
-                payment_method: paymentMethod || availablePaymentMethods[0] || null,
+                payment_method: event.payment_enabled ? paymentMethod : null,
             };
 
             // Build signature_records[] for all waivers

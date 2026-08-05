@@ -10,7 +10,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 
@@ -131,6 +131,14 @@ async function completeRequiredFields({ firstName = 'John', lastName = 'Doe', em
     await userEvent.type(await screen.findByLabelText(/first name/i), firstName);
     await userEvent.type(screen.getByLabelText(/last name/i), lastName);
     await userEvent.type(screen.getByLabelText(/email/i), email);
+}
+
+function deferred() {
+    let resolve;
+    const promise = new Promise((resolvePromise) => {
+        resolve = resolvePromise;
+    });
+    return { promise, resolve };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -260,6 +268,17 @@ describe('EventRegistrationForm', () => {
         await waitFor(() => expect(supabase._mocks.mockInsert).toHaveBeenCalledWith(expect.objectContaining({ payment_method: 'in_person' })));
     });
 
+    it('blocks a payment-enabled event with no viable payment method before inserting', async () => {
+        setupMocks(makeEvent({ payment_enabled: true }));
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields();
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+
+        expect(await screen.findByText('Choose a payment method')).toBeInTheDocument();
+        expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
+    });
+
     it('submits an in-person-only payment as pending without the Tithe.ly handoff', async () => {
         setupMocks(makeEvent({ payment_enabled: true, allow_in_person_payment: true }));
         supabase._mocks.mockInsertSingle.mockResolvedValue({
@@ -356,6 +375,29 @@ describe('EventRegistrationForm', () => {
 
         render(<EventRegistrationForm eventId="evt-999" orgId="org-1" />);
         expect(await screen.findByText(/event not found/i)).toBeInTheDocument();
+    });
+
+    it('ignores a stale event fetch after the requested event changes', async () => {
+        setupMocks();
+        const stale = deferred();
+        const currentEvent = makeEvent({ id: 'evt-2', title: 'Current Event' });
+        supabase._mocks.mockSingle
+            .mockImplementationOnce(() => stale.promise)
+            .mockResolvedValueOnce({ data: currentEvent, error: null });
+
+        const { rerender } = render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+        rerender(<EventRegistrationForm eventId="evt-2" orgId="org-1" />);
+
+        expect(await screen.findByRole('heading', { name: 'Current Event' })).toBeInTheDocument();
+
+        await act(async () => {
+            stale.resolve({ data: makeEvent({ title: 'Stale Event' }), error: null });
+        });
+
+        await waitFor(() => {
+            expect(screen.queryByRole('heading', { name: 'Stale Event' })).not.toBeInTheDocument();
+            expect(screen.getByRole('heading', { name: 'Current Event' })).toBeInTheDocument();
+        });
     });
 
     it('shows "no longer accepting" when event status is not active', async () => {

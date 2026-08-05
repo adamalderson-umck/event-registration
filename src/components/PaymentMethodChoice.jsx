@@ -14,7 +14,9 @@ export default function PaymentMethodChoice({
 }) {
     const availableMethods = methods.filter((method) => PAYMENT_METHOD_LABELS[method]);
 
-    if (availableMethods.length === 0) return null;
+    if (availableMethods.length === 0) {
+        return error ? <p id={ERROR_ID} role="alert" className="text-sm text-danger">{error}</p> : null;
+    }
 
     if (availableMethods.length === 1) {
         const method = availableMethods[0];
