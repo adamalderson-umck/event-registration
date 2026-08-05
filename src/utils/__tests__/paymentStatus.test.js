@@ -19,7 +19,7 @@ describe('canMarkRegistrationPaid', () => {
         { ...eligibleRegistration, status: 'cancelled' },
         { ...eligibleRegistration, payment_status: 'paid' },
         { ...eligibleRegistration, payment_status: 'not_required' },
-        { ...eligibleRegistration, payment_method: 'paypal' },
+        { ...eligibleRegistration, payment_method: 'other_processor' },
         { ...eligibleRegistration, payment_method: 'in_person_verified' },
         { ...eligibleRegistration, payment_method: null },
     ])('rejects ineligible registrations', (registration) => {

@@ -1,6 +1,6 @@
 # Event Registration System
 
-A dynamic, multi-tenant Event Registration System with secure forms, waiver signatures, waitlists, and PayPal integration. Built with React 19, Tailwind CSS v4, and Supabase.
+A dynamic, multi-tenant Event Registration System with secure forms, waiver signatures, waitlists, and Tithe.ly payment hand-offs. Built with React 19, Tailwind CSS v4, and Supabase.
 
 ## Features
 
@@ -9,7 +9,7 @@ A dynamic, multi-tenant Event Registration System with secure forms, waiver sign
 - **Electronic Waivers:** E-signature capture (draw or type) with legally compliant IP and timestamp logging.
 - **Atomic Waitlist Management:** Database-level capacities with Supabase Edge Functions handling promotions automatically upon cancellations.
 - **Security & Bot Protection:** Cloudflare Turnstile CAPTCHA and Sentry Error Monitoring built-in.
-- **Payments:** Optional PayPal JS SDK integration for paid events.
+- **Payments:** Optional Tithe.ly form hand-off with administrator-verified payment status for paid events.
 
 ## Tech Stack
 

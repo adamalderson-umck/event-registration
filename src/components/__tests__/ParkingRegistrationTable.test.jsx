@@ -8,7 +8,7 @@ const registration = (overrides = {}) => ({
     id: 'parking-registration-1',
     status: 'confirmed',
     payment_status: 'paid',
-    payment_method: 'paypal',
+    payment_method: 'tithely',
     form_data: {
         system_first_name: 'Alex',
         system_last_name: 'Morgan',
@@ -85,7 +85,7 @@ describe('ParkingRegistrationTable', () => {
     it('does not offer Mark Paid for ineligible registrations', () => {
         render(
             <ParkingRegistrationTable
-                registrations={[registration({ payment_status: 'pending', payment_method: 'paypal' })]}
+                registrations={[registration({ payment_status: 'pending', payment_method: 'other_processor' })]}
                 onView={vi.fn()}
                 onMarkPaid={vi.fn()}
                 onPrintPass={vi.fn()}
