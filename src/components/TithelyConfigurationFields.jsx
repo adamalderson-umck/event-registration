@@ -1,12 +1,9 @@
 import React from 'react';
-import { getTithelyDraftStatus } from '../utils/tithelyEmbed';
+import { getTithelyDraftStatus, TITHELY_ERROR_CODES } from '../utils/tithelyEmbed';
 import Input from './ui/Input';
 import Label from './ui/Label';
 
 const ERROR_ID = 'event-tithely-configuration-error';
-const URL_ERROR = 'Enter a valid Tithe.ly giving URL.';
-const EMBED_ERROR = 'Paste the official Tithe.ly embed code.';
-const MISMATCH_ERROR = 'Tithe.ly URL and embed code must use the same form ID.';
 
 export default function TithelyConfigurationFields({
     tithelyGivingUrl = '',
@@ -24,10 +21,19 @@ export default function TithelyConfigurationFields({
         draftStatus.error && (tithelyGivingUrl || tithelyEmbedCode || tithelyEmbedConfig),
     );
     const urlHasError = hasError && (
-        draftStatus.error === URL_ERROR || draftStatus.error === MISMATCH_ERROR
+        [
+            TITHELY_ERROR_CODES.MISSING_URL,
+            TITHELY_ERROR_CODES.INVALID_URL,
+            TITHELY_ERROR_CODES.INVALID_FORM_ID,
+            TITHELY_ERROR_CODES.MISMATCH,
+        ].includes(draftStatus.errorCode)
     );
     const embedHasError = hasError && (
-        draftStatus.error === EMBED_ERROR || draftStatus.error === MISMATCH_ERROR
+        [
+            TITHELY_ERROR_CODES.MISSING_EMBED,
+            TITHELY_ERROR_CODES.INVALID_EMBED,
+            TITHELY_ERROR_CODES.MISMATCH,
+        ].includes(draftStatus.errorCode)
     );
 
     return (

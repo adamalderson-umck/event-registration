@@ -275,7 +275,7 @@ describe('EventRegistrationForm', () => {
         await completeRequiredFields();
         fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
 
-        expect(await screen.findByText('Choose a payment method')).toBeInTheDocument();
+        expect(await screen.findByText('No usable payment method is configured for this event.')).toBeInTheDocument();
         expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
     });
 

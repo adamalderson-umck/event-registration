@@ -199,7 +199,9 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         // Waiver validation — only on final submit (fieldsToValidate is null)
         const newSigErrors = {};
         if (!fieldsToValidate && event?.payment_enabled && !paymentMethod) {
-            newErrors._payment_method = 'Choose a payment method';
+            newErrors._payment_method = availablePaymentMethods.length === 0
+                ? 'No usable payment method is configured for this event.'
+                : 'Choose a payment method';
         }
         if (!fieldsToValidate && Array.isArray(event?.waivers)) {
             for (const waiver of event.waivers) {

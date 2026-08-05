@@ -5,6 +5,7 @@ import {
     normalizeTithelyConfiguration,
     parseTithelyEmbedCode,
     parseTithelyGivingUrl,
+    TITHELY_ERROR_CODES,
     validateStoredTithelyConfiguration,
 } from '../tithelyEmbed';
 
@@ -63,7 +64,7 @@ describe('Tithe.ly embed parsing', () => {
         `<button class="tithely-give-button" data-form="${FORM_ID}"><span>Give</span></button><script defer src="https://static.tithely.com/give/give.js"></script>`,
         `<head data-extra="unsafe"></head><button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
     ])('rejects unsafe or incomplete embed code', code => {
-        expect(() => parseTithelyEmbedCode(code)).toThrow('Paste the official Tithe.ly embed code.');
+        expect(() => parseTithelyEmbedCode(code)).toThrow('Use the official Tithe.ly embed button and script.');
     });
 });
 
@@ -103,10 +104,48 @@ describe('Tithe.ly configuration', () => {
         })).toThrow('Tithe.ly URL and embed code must use the same form ID.');
     });
 
-    it('returns an invalid draft status instead of throwing', () => {
-        expect(getTithelyDraftStatus({ givingUrl: 'https://give.tithe.ly/?formId=nope' })).toEqual({
+    it.each([
+        {
+            name: 'missing URL',
+            configuration: { embedCode: embedCode() },
+            errorCode: TITHELY_ERROR_CODES.MISSING_URL,
+            message: 'Enter the Tithe.ly giving URL.',
+        },
+        {
+            name: 'invalid host or protocol',
+            configuration: { givingUrl: `http://example.com/?formId=${FORM_ID}`, embedCode: embedCode() },
+            errorCode: TITHELY_ERROR_CODES.INVALID_URL,
+            message: 'Use an HTTPS give.tithe.ly giving URL.',
+        },
+        {
+            name: 'missing or invalid form ID',
+            configuration: { givingUrl: 'https://give.tithe.ly/', embedCode: embedCode() },
+            errorCode: TITHELY_ERROR_CODES.INVALID_FORM_ID,
+            message: 'The Tithe.ly giving URL must include one valid form ID.',
+        },
+        {
+            name: 'missing embed code',
+            configuration: { givingUrl },
+            errorCode: TITHELY_ERROR_CODES.MISSING_EMBED,
+            message: 'Paste the official Tithe.ly embed code.',
+        },
+        {
+            name: 'unsupported embed structure',
+            configuration: { givingUrl, embedCode: '<button>Give</button>' },
+            errorCode: TITHELY_ERROR_CODES.INVALID_EMBED,
+            message: 'Use the official Tithe.ly embed button and script.',
+        },
+        {
+            name: 'mismatched form IDs',
+            configuration: { givingUrl, embedCode: embedCode(OTHER_FORM_ID) },
+            errorCode: TITHELY_ERROR_CODES.MISMATCH,
+            message: 'Tithe.ly URL and embed code must use the same form ID.',
+        },
+    ])('returns a distinct draft error for $name', ({ configuration, errorCode, message }) => {
+        expect(getTithelyDraftStatus(configuration)).toEqual({
             configured: false,
-            error: expect.any(String),
+            error: message,
+            errorCode,
             givingUrl: null,
             embedConfig: null,
         });

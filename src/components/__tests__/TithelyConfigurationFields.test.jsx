@@ -95,4 +95,41 @@ describe('TithelyConfigurationFields', () => {
         expect(screen.getByLabelText('Tithe.ly Embed Code')).toHaveAttribute('aria-invalid', 'true');
         expect(screen.getByLabelText('Tithe.ly Embed Code')).toHaveAttribute('aria-describedby', 'event-tithely-configuration-error');
     });
+
+    it.each([
+        {
+            name: 'missing URL',
+            props: { tithelyEmbedCode: makeEmbedCode(FORM_ID) },
+            message: 'Enter the Tithe.ly giving URL.',
+        },
+        {
+            name: 'invalid host or protocol',
+            props: { tithelyGivingUrl: `http://example.com/?formId=${FORM_ID}`, tithelyEmbedCode: makeEmbedCode(FORM_ID) },
+            message: 'Use an HTTPS give.tithe.ly giving URL.',
+        },
+        {
+            name: 'missing form ID',
+            props: { tithelyGivingUrl: 'https://give.tithe.ly/', tithelyEmbedCode: makeEmbedCode(FORM_ID) },
+            message: 'The Tithe.ly giving URL must include one valid form ID.',
+        },
+        {
+            name: 'missing embed code',
+            props: { tithelyGivingUrl: GIVING_URL },
+            message: 'Paste the official Tithe.ly embed code.',
+        },
+        {
+            name: 'unsupported embed code',
+            props: { tithelyGivingUrl: GIVING_URL, tithelyEmbedCode: '<button>Give</button>' },
+            message: 'Use the official Tithe.ly embed button and script.',
+        },
+        {
+            name: 'mismatched form IDs',
+            props: { tithelyGivingUrl: GIVING_URL, tithelyEmbedCode: makeEmbedCode(OTHER_FORM_ID) },
+            message: 'Tithe.ly URL and embed code must use the same form ID.',
+        },
+    ])('shows the distinct $name editor message', ({ props, message }) => {
+        render(<TithelyConfigurationFields {...props} onChange={vi.fn()} />);
+
+        expect(screen.getByRole('alert')).toHaveTextContent(message);
+    });
 });
