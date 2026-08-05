@@ -1,10 +1,31 @@
 import { validateParkingEventDraft } from '../config/eventPresets';
 import { sha256 } from './hashContent';
+import { normalizeTithelyConfiguration } from './tithelyEmbed';
 
 export async function buildEventPayload(event, orgId) {
     if (event.status === 'active') {
         const validationError = validateParkingEventDraft(event)[0];
         if (validationError) throw new Error(validationError);
+    }
+
+    let tithelyConfiguration = { givingUrl: null, embedConfig: null };
+    let tithelyConfigurationError = null;
+
+    try {
+        tithelyConfiguration = normalizeTithelyConfiguration({
+            givingUrl: event.tithelyGivingUrl,
+            embedCode: event.tithelyEmbedCode,
+            existingEmbedConfig: event.tithelyEmbedConfig,
+        });
+    } catch (error) {
+        tithelyConfigurationError = error;
+    }
+
+    if (event.status === 'active' && event.paymentEnabled
+        && !tithelyConfiguration.givingUrl && !event.allowInPersonPayment) {
+        const paymentError = new Error('Payment-enabled events require a valid Tithe.ly form or Pay in Person.');
+        if (tithelyConfigurationError) paymentError.cause = tithelyConfigurationError;
+        throw paymentError;
     }
 
     return {
@@ -22,6 +43,10 @@ export async function buildEventPayload(event, orgId) {
         payment_enabled: event.paymentEnabled,
         payment_amount: event.paymentAmount ? parseFloat(event.paymentAmount) : null,
         allow_in_person_payment: event.allowInPersonPayment,
+        tithely_giving_url: tithelyConfiguration.givingUrl
+            || (typeof event.tithelyGivingUrl === 'string' && event.tithelyGivingUrl.trim())
+            || null,
+        tithely_embed_config: tithelyConfiguration.embedConfig,
         form_fields: event.formFields,
         notifications: {
             organizers: event.notifications.organizers.filter((email) => email.trim() !== ''),

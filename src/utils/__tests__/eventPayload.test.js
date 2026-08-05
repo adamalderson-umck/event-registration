@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { createEventPreset } from '../../config/eventPresets';
 import { buildDuplicateEventPayload, buildEventPayload } from '../eventPayload';
 
+const TITHELY_FORM_ID = '59b0fe48-e075-436e-a91e-88011a19d975';
+const TITHELY_GIVING_URL = `https://give.tithe.ly/?formId=${TITHELY_FORM_ID}&amount=100`;
+const TITHELY_EMBED_CODE = `<button class="tithely-give-button" data-form="${TITHELY_FORM_ID}" style="background: #fff">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`;
+
 const createParkingDraft = () => {
     const preset = createEventPreset('parking');
 
@@ -19,6 +23,9 @@ const createParkingDraft = () => {
         paymentEnabled: true,
         paymentAmount: '100',
         allowInPersonPayment: true,
+        tithelyGivingUrl: TITHELY_GIVING_URL,
+        tithelyEmbedCode: TITHELY_EMBED_CODE,
+        tithelyEmbedConfig: null,
         eventType: 'parking',
         formFields: preset.formFields,
         waivers: preset.waivers,
@@ -45,8 +52,11 @@ describe('event payloads', () => {
             allow_in_person_payment: true,
             payment_enabled: true,
             payment_amount: 100,
+            tithely_giving_url: TITHELY_GIVING_URL,
+            tithely_embed_config: { formId: TITHELY_FORM_ID },
             org_id: 'org-1',
         });
+        expect(payload).not.toHaveProperty('tithely_embed_code');
         expect(payload.form_fields).toContainEqual(expect.objectContaining({ id: 'parking_license_plate' }));
         expect(payload.waivers).toContainEqual(expect.objectContaining({
             id: 'parking_rules_agreement',
@@ -62,11 +72,78 @@ describe('event payloads', () => {
         );
     });
 
+    it('allows an active payment-enabled event to use only Pay in Person', async () => {
+        const event = {
+            ...createParkingDraft(),
+            eventType: 'standard',
+            tithelyGivingUrl: '',
+            tithelyEmbedCode: '',
+            tithelyEmbedConfig: null,
+        };
+
+        const payload = await buildEventPayload(event, 'org-1');
+
+        expect(payload).toMatchObject({
+            allow_in_person_payment: true,
+            tithely_giving_url: null,
+            tithely_embed_config: null,
+        });
+    });
+
+    it('keeps an invalid giving URL when Pay in Person remains available', async () => {
+        const event = {
+            ...createParkingDraft(),
+            eventType: 'standard',
+            tithelyGivingUrl: '  https://example.org/give  ',
+            tithelyEmbedCode: '',
+            tithelyEmbedConfig: null,
+        };
+
+        const payload = await buildEventPayload(event, 'org-1');
+
+        expect(payload).toMatchObject({
+            tithely_giving_url: 'https://example.org/give',
+            tithely_embed_config: null,
+        });
+    });
+
+    it('requires a valid payment path for active payment-enabled events', async () => {
+        const event = {
+            ...createParkingDraft(),
+            eventType: 'standard',
+            allowInPersonPayment: false,
+            tithelyGivingUrl: '',
+            tithelyEmbedCode: '',
+            tithelyEmbedConfig: null,
+        };
+
+        await expect(buildEventPayload(event, 'org-1')).rejects.toThrow(
+            'Payment-enabled events require a valid Tithe.ly form or Pay in Person.'
+        );
+    });
+
+    it('reuses a saved Tithe.ly form configuration when the embed code is blank', async () => {
+        const event = {
+            ...createParkingDraft(),
+            tithelyEmbedCode: '',
+            tithelyEmbedConfig: { formId: TITHELY_FORM_ID },
+        };
+
+        const payload = await buildEventPayload(event, 'org-1');
+
+        expect(payload).toMatchObject({
+            tithely_giving_url: TITHELY_GIVING_URL,
+            tithely_embed_config: { formId: TITHELY_FORM_ID },
+        });
+    });
+
     it('builds a draft duplicate without registration state while preserving parking configuration', () => {
         const source = {
             ...createParkingDraft(),
             event_type: 'parking',
             allow_in_person_payment: true,
+            tithely_giving_url: TITHELY_GIVING_URL,
+            tithely_embed_config: { formId: TITHELY_FORM_ID },
             id: 'event-1',
             created_at: '2026-01-01T00:00:00Z',
             updated_at: '2026-01-02T00:00:00Z',
@@ -86,6 +163,8 @@ describe('event payloads', () => {
             reminder_sent_at: null,
             event_type: 'parking',
             allow_in_person_payment: true,
+            tithely_giving_url: TITHELY_GIVING_URL,
+            tithely_embed_config: { formId: TITHELY_FORM_ID },
         });
         expect(payload).not.toHaveProperty('id');
     });
