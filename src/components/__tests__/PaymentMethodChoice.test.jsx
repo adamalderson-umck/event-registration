@@ -15,7 +15,7 @@ describe('PaymentMethodChoice', () => {
         render(<PaymentMethodChoice availableMethods={['in_person']} />);
 
         expect(screen.getByRole('heading', { name: 'Payment Method' })).toBeInTheDocument();
-        expect(screen.getByText(/pay in person/i)).toBeInTheDocument();
+        expect(screen.getByText('Payment method: Pay in Person.')).toBeInTheDocument();
         expect(screen.queryByRole('radio')).not.toBeInTheDocument();
     });
 

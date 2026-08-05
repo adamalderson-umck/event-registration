@@ -23,6 +23,7 @@ export default function PaymentMethodChoice({
             <section aria-labelledby="payment-method-summary" className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <h3 id="payment-method-summary" className="text-sm font-semibold text-slate-800">Payment Method</h3>
                 <p className="mt-1 text-sm text-slate-600">
+                    <span className="font-medium text-slate-800">Payment method: {label}.</span>{' '}
                     {method === 'tithely'
                         ? `Payment will be completed through ${label} after you submit your registration.`
                         : 'Please pay in person after you submit your registration.'}
