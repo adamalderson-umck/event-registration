@@ -24,8 +24,8 @@ function escapeHtml(value) {
 function escapeCssUrl(value) {
     return String(value ?? '')
         .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\\\'")
-        .replace(/[\0-\x1F\x7F]/g, (character) => `\\${character.codePointAt(0).toString(16)} `);
+        .replace(/'/g, "\\'")
+        .replace(/[\0-\x1F\x7F<]/g, (character) => `\\${character.codePointAt(0).toString(16)} `);
 }
 
 function formatDate(value) {

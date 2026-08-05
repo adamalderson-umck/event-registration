@@ -87,6 +87,28 @@ describe('parking passes', () => {
         expect(html).toContain('opacity: .045;');
     });
 
+    it('serializes hostile font URLs as one safe CSS string value', () => {
+        const fontUrl = "/assets/font.woff2?cache=a&v=1');}.injected{color:red}</style><img src=x onerror=alert(1)>/*";
+        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, {
+            ...assets,
+            fontUrl,
+        });
+
+        expect(html).toContain("src: url('/assets/font.woff2?cache=a&v=1\\');}.injected{color:red}\\3c /style>\\3c img src=x onerror=alert(1)>/*') format('woff2');");
+        expect(html).toMatch(/src: url\('(?:[^'\\]|\\.)*'\) format\('woff2'\);/);
+        expect(html).not.toContain("');}.injected{color:red}</style><img src=x onerror=alert(1)>");
+    });
+
+    it('keeps hostile logo URLs inside escaped image attributes', () => {
+        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, {
+            ...assets,
+            logoUrl: '/assets/logo.svg"><img src=x onerror=alert(1)>',
+        });
+
+        expect(html).toContain('<img class="brand-logo" src="/assets/logo.svg&quot;&gt;&lt;img src=x onerror=alert(1)&gt;" alt="Kent Methodist Church logo">');
+        expect(html).not.toContain('src="/assets/logo.svg"><img src=x onerror=alert(1)>');
+    });
+
     it('does not open a window for a registration that cannot print a pass', () => {
         const open = vi.spyOn(window, 'open');
 
