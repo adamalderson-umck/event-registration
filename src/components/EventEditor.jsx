@@ -38,12 +38,14 @@ const deduplicateFieldIds = (fields) => {
 
 export default function EventEditor({ orgId, eventId, onBack, initialEventType = EVENT_TYPES.STANDARD }) {
     const { currentOrg } = useOrg();
+    const [createdEventId, setCreatedEventId] = useState(null);
     const [loading, setLoading] = useState(!!eventId);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState('');
     const [userDisplayName, setUserDisplayName] = useState('');
     const originalOrganizers = useRef([]);
+    const persistedEventId = eventId || createdEventId;
 
     const [event, setEvent] = useState(() => {
         const preset = createEventPreset(initialEventType);
@@ -213,23 +215,27 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
         try {
             const eventData = await buildEventPayload(event, orgId);
 
-            if (eventId) {
+            if (persistedEventId) {
                 // Update existing
                 const { error: updateErr } = await supabase
                     .from('events')
                     .update(eventData)
-                    .eq('id', eventId);
+                    .eq('id', persistedEventId);
 
                 if (updateErr) throw updateErr;
             } else {
                 // Create new
                 eventData.registration_count = 0;
                 eventData.waitlist_count = 0;
-                const { error: insertErr } = await supabase
+                const { data: createdEvent, error: insertErr } = await supabase
                     .from('events')
-                    .insert(eventData);
+                    .insert(eventData)
+                    .select('id')
+                    .single();
 
                 if (insertErr) throw insertErr;
+                if (!createdEvent?.id) throw new Error('Event was created without a returned ID');
+                setCreatedEventId(createdEvent.id);
             }
 
             setSaved(true);
@@ -284,7 +290,7 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
                     </Button>
                     <div className="flex items-center gap-2">
                         <h2 className="text-xl font-bold text-slate-900">
-                            {eventId ? 'Edit Event' : 'Create Event'}
+                            {persistedEventId ? 'Edit Event' : 'Create Event'}
                         </h2>
                         {event.eventType === 'parking' && (
                             <span className="text-xs font-semibold rounded-full bg-blue-50 text-blue-700 px-2 py-0.5">Parking</span>
@@ -293,11 +299,11 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
                 </div>
                 <div className="flex items-center gap-3">
                     {saved && <span className="text-sm text-success font-medium">✓ Saved</span>}
-                    {eventId && (
+                    {persistedEventId && (
                         <Button
                             variant="secondary"
                             onClick={() => {
-                                const eventParam = event.slug || eventId;
+                                const eventParam = event.slug || persistedEventId;
                                 window.open(`${window.location.origin}/?org=${orgId}&event=${eventParam}`, '_blank');
                             }}
                             type="button"
@@ -413,7 +419,7 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
                         <HeaderImageUpload
                             imageUrl={event.headerImageUrl}
                             orgId={orgId}
-                            eventId={eventId || 'new'}
+                            eventId={persistedEventId || 'new'}
                             onChange={(url) => handleChange('headerImageUrl', url)}
                         />
                     </div>
