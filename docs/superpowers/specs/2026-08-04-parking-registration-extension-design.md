@@ -18,7 +18,7 @@ The beta includes:
 - Payment-based pass validity
 - In-person payment verification by an administrator
 - A parking-focused registrations table
-- Individual printing on 2.833-inch by 11-inch precut stock
+- Individual printing on a portrait Letter sheet, with one 8.5-inch by 3.66-inch landscape pass in the top third
 
 The beta does not include:
 
@@ -167,17 +167,17 @@ CSV export and registration printouts retain all configured parking fields and t
 
 ## Physical Parking Pass
 
-The Print Pass action generates one pass for the selected registration. It targets one piece of precut stock measuring exactly 2.833 inches wide by 11 inches long. It does not arrange multiple passes on letter paper.
+The Print Pass action generates one pass for the selected registration. The browser preview remains a portrait Letter sheet measuring 8.5 inches wide by 11 inches long. The pass occupies the top third of that sheet, with a footprint of 8.5 inches wide by 3.66 inches tall. The middle and bottom thirds remain blank.
 
-Print CSS sets the physical page size explicitly:
+Print CSS keeps the preview and physical sheet in portrait Letter orientation:
 
 ```css
 @page {
-  size: 2.833in 11in;
+  size: letter portrait;
 }
 ```
 
-The narrow portrait layout contains:
+The pass is a wide landscape layout. Its three information groups flow from left to right across the top-third footprint: organization and event identity, pass status and vehicle identity, then term and reference information. It contains:
 
 - Organization name
 - Parking event or term title
@@ -221,7 +221,9 @@ The document generator HTML-escapes all event and registration values. Opening o
 - Parking preset contains exactly one required parking waiver.
 - Pass HTML escapes untrusted values.
 - Pass output contains required public vehicle information and excludes private registrant information.
-- Print CSS specifies `2.833in 11in`.
+- Print CSS specifies a portrait Letter page.
+- The pass footprint is `8.5in` wide by `3.66in` tall and is anchored to the top of the page.
+- The remaining middle and bottom thirds are blank.
 
 ### Component tests
 
@@ -244,7 +246,7 @@ The document generator HTML-escapes all event and registration values. Opening o
 
 ### Physical verification
 
-Complete one end-to-end registration through payment verification and print its pass on the actual 2.833-inch by 11-inch precut stock. Confirm page size, orientation, scaling, legibility, and printer-feed behavior before considering the beta ready for operational use.
+Complete one end-to-end registration through payment verification and print its pass on an actual portrait Letter sheet. Confirm that the browser and printer previews remain portrait, the 8.5-inch by 3.66-inch landscape pass occupies the top third at 100% scale, the remaining two-thirds are blank, and the content is legible before considering the beta ready for operational use.
 
 ## Delivery Boundary
 
