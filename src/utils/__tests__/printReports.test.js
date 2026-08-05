@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { printRegistrationTable } from '../printReports';
+import { printIndividualRegistration, printRegistrationTable } from '../printReports';
 
 describe('printRegistrationTable', () => {
     let write;
@@ -22,36 +22,57 @@ describe('printRegistrationTable', () => {
         vi.restoreAllMocks();
     });
 
-    it('prints Waiver and Media after form fields and before Status', () => {
+    it('prints parking fields with report parity columns', () => {
         const event = {
-            title: 'Beta Event',
+            title: 'Parking Event',
             form_fields: [
-                { id: 'name', label: 'Name', type: 'text' },
-                { id: 'section', label: 'Details', type: 'sectionBreak' },
+                { id: 'system_first_name', label: 'First Name', type: 'text' },
+                { id: 'parking_license_plate', label: 'License Plate', type: 'text' },
             ],
-            waivers: [
-                { id: 'liability', title: 'Liability Waiver', required: true },
-                { id: 'media', title: 'Media Release', required: false },
-            ],
+            waivers: [],
         };
-        const registrations = [{
-            id: 'registration-1',
-            status: 'confirmed',
-            form_data: { name: 'Alex' },
-            signature_records: [
-                { waiverId: 'liability', signed: true, declined: false },
-                { waiverId: 'media', signed: false, declined: true },
-            ],
-        }];
+        const registrations = [
+            {
+                id: 'registration-1',
+                status: 'confirmed',
+                payment_status: 'paid',
+                created_at: '2026-08-04T12:00:00Z',
+                form_data: {
+                    system_first_name: 'Alex',
+                    parking_license_plate: 'ABC123',
+                },
+                signature_records: [],
+            },
+            {
+                id: 'registration-2',
+                status: 'confirmed',
+                payment_status: 'paid & <review>',
+                form_data: {
+                    system_first_name: 'Jordan',
+                    parking_license_plate: 'XYZ789',
+                },
+                signature_records: [],
+            },
+        ];
 
         printRegistrationTable(registrations, event);
 
         const html = write.mock.calls[0][0];
-        expect(html).toContain(
-            '<thead><tr><th>Name</th><th>Waiver</th><th>Media</th><th>Status</th></tr></thead>'
+        expect(html).toContain('<th>License Plate</th>');
+        expect(html).toContain('<th>Status</th><th>Payment</th><th>Submitted</th>');
+        expect(html).toContain('<td>ABC123</td>');
+        expect(html).toContain('<td>confirmed</td><td>paid</td>');
+        expect(html).toContain('<td>paid &amp; &lt;review&gt;</td>');
+        expect(html).toContain(new Date('2026-08-04T12:00:00Z').toLocaleString());
+    });
+
+    it('escapes payment status in an individual registration report', () => {
+        printIndividualRegistration(
+            { payment_status: 'paid & <review>' },
+            { title: 'Parking Event', form_fields: [] }
         );
-        expect(html).toContain(
-            '<tr><td>Alex</td><td>Signed</td><td>Declined</td><td>confirmed</td></tr>'
-        );
+
+        const html = write.mock.calls[0][0];
+        expect(html).toContain('Payment: <strong>paid &amp; &lt;review&gt;</strong>');
     });
 });

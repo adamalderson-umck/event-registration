@@ -46,6 +46,15 @@ function formatValue(value) {
     return String(value);
 }
 
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 
 
 /**
@@ -65,7 +74,7 @@ export function printIndividualRegistration(registration, event) {
     <h2>Individual Registration</h2>
     <div class="meta">
       Status: <strong>${registration.status || 'pending'}</strong> &nbsp;|&nbsp;
-      Payment: <strong>${registration.payment_status || 'N/A'}</strong> &nbsp;|&nbsp;
+      Payment: <strong>${escapeHtml(registration.payment_status || 'N/A')}</strong> &nbsp;|&nbsp;
       Date: <strong>${registration.created_at
             ? new Date(registration.created_at).toLocaleString()
             : 'N/A'}</strong>
@@ -83,7 +92,7 @@ export function printIndividualRegistration(registration, event) {
 export function printRegistrationTable(registrations, event) {
     const formFields = (event.form_fields || []).filter((f) => f.type !== 'sectionBreak');
     const headers = formFields.map((f) => `<th>${f.label}</th>`).join('');
-    const derivedHeaders = '<th>Waiver</th><th>Media</th><th>Status</th>';
+    const derivedHeaders = '<th>Waiver</th><th>Media</th><th>Status</th><th>Payment</th><th>Submitted</th>';
 
     const rows = registrations.map((reg) => {
         const cells = formFields.map((f) =>
@@ -93,7 +102,10 @@ export function printRegistrationTable(registrations, event) {
             reg,
             event.waivers
         );
-        return `<tr>${cells}<td>${waiverStatus}</td><td>${mediaDecision}</td><td>${reg.status || 'pending'}</td></tr>`;
+        const submitted = reg.created_at
+            ? new Date(reg.created_at).toLocaleString()
+            : 'N/A';
+        return `<tr>${cells}<td>${waiverStatus}</td><td>${mediaDecision}</td><td>${reg.status || 'pending'}</td><td>${escapeHtml(reg.payment_status || 'N/A')}</td><td>${submitted}</td></tr>`;
     }).join('');
 
     const html = `<!DOCTYPE html><html><head><title>${event.title} - Registrations</title>${printStyles}</head><body>

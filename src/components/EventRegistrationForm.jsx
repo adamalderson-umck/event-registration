@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { Loader2 } from 'lucide-react';
 import SuccessState from './SuccessState';
+import RegistrationPaymentStep from './RegistrationPaymentStep';
 import WaitlistNotice from './WaitlistNotice';
 import WaiverSignatureStep from './WaiverSignatureStep';
 import FormPreview from './FormPreview';
@@ -14,8 +15,8 @@ export default function EventRegistrationForm({ eventId, orgId }) {
     const [errors, setErrors] = useState({});
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [submitted, setSubmitted] = useState(false);
-    const [isWaitlisted, setIsWaitlisted] = useState(false);
+    const [phase, setPhase] = useState('form');
+    const [createdRegistration, setCreatedRegistration] = useState(null);
     const [fetchError, setFetchError] = useState('');
     const [currentPage, setCurrentPage] = useState(0);
     // Map of waiverID → per-waiver signature state
@@ -332,16 +333,21 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 });
             }
 
-            const { error: insertError } = await supabase
+            const { data: created, error: insertError } = await supabase
                 .from('registrations')
-                .insert(registrationData);
+                .insert(registrationData)
+                .select('id, status, payment_status, payment_method')
+                .single();
 
             if (insertError) throw insertError;
+            if (!created) throw new Error('Registration was created without a returned record.');
 
-            // Determine if waitlisted for UI display
-            const isFull = event.capacity && event.registration_count >= event.capacity;
-            setIsWaitlisted(isFull && event.waitlist_enabled);
-            setSubmitted(true);
+            setCreatedRegistration(created);
+            const requiresParkingPayment =
+                created.status === 'confirmed'
+                && event.event_type === 'parking'
+                && event.payment_enabled === true;
+            setPhase(requiresParkingPayment ? 'payment' : 'success');
         } catch (err) {
             console.error('Error submitting registration:', err);
             setErrors({ _form: 'Failed to submit registration. Please try again.' });
@@ -353,8 +359,8 @@ export default function EventRegistrationForm({ eventId, orgId }) {
     const handleReset = () => {
         setFormData({});
         setErrors({});
-        setSubmitted(false);
-        setIsWaitlisted(false);
+        setPhase('form');
+        setCreatedRegistration(null);
         setCurrentPage(0);
         setSignaturesMap({});
         setSignaturesErrors({});
@@ -379,12 +385,26 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         );
     }
 
+    if (phase === 'payment') {
+        return (
+            <RegistrationPaymentStep
+                event={event}
+                registration={createdRegistration}
+                onComplete={(completedRegistration) => {
+                    setCreatedRegistration(completedRegistration);
+                    setPhase('success');
+                }}
+            />
+        );
+    }
+
     // Success state
-    if (submitted) {
+    if (phase === 'success') {
         return (
             <SuccessState
                 event={event}
-                isWaitlisted={isWaitlisted}
+                registration={createdRegistration}
+                isWaitlisted={createdRegistration?.status === 'waitlisted'}
                 onReset={handleReset}
             />
         );

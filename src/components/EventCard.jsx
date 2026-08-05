@@ -34,9 +34,14 @@ export default function EventCard({ event, onSelect }) {
 
             <div className="p-5">
                 <div className="flex items-start justify-between mb-3">
-                    <h3 className="text-lg font-bold text-slate-900 group-hover:text-primary transition-colors line-clamp-2">
-                        {event.title}
-                    </h3>
+                    <div className="flex items-center gap-2 min-w-0">
+                        <h3 className="text-lg font-bold text-slate-900 group-hover:text-primary transition-colors line-clamp-2">
+                            {event.title}
+                        </h3>
+                        {event.event_type === 'parking' && (
+                            <span className="text-xs font-semibold rounded-full bg-blue-50 text-blue-700 px-2 py-0.5">Parking</span>
+                        )}
+                    </div>
                     <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-primary transition-all shrink-0 ml-2 group-hover:translate-x-1" />
                 </div>
 

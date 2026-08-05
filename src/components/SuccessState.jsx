@@ -1,11 +1,14 @@
 import React from 'react';
 import { CheckCircle2, CalendarDays, ArrowLeft, Calendar } from 'lucide-react';
 import { buildGoogleCalendarUrl, downloadIcs } from '../utils/calendarLinks';
+import { getParkingPassStatus } from '../utils/parkingRegistration';
 import Button from './ui/Button';
 import Card from './ui/Card';
 
-export default function SuccessState({ event, isWaitlisted, onReset }) {
+export default function SuccessState({ event, registration, isWaitlisted, onReset }) {
     const eventTitle = event?.title || '';
+    const isParking = event?.event_type === 'parking';
+    const parkingPassStatus = isParking ? getParkingPassStatus(registration) : null;
 
     return (
         <Card className="max-w-lg mx-auto p-8 text-center">
@@ -32,7 +35,13 @@ export default function SuccessState({ event, isWaitlisted, onReset }) {
                 A confirmation email will be sent shortly with your registration details and a cancellation link.
             </p>
 
-            {event?.start_date && !isWaitlisted && (
+            {isParking && (
+                <p className="text-sm font-semibold text-slate-700 mb-6">
+                    {parkingPassStatus}
+                </p>
+            )}
+
+            {event?.event_type !== 'parking' && event?.start_date && !isWaitlisted && (
                 <div className="flex justify-center gap-4 mb-6">
                     <a
                         href={buildGoogleCalendarUrl(event)}
