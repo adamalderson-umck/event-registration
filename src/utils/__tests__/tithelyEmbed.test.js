@@ -1,0 +1,130 @@
+import { describe, expect, it } from 'vitest';
+import {
+    getAvailablePaymentMethods,
+    getTithelyDraftStatus,
+    normalizeTithelyConfiguration,
+    parseTithelyEmbedCode,
+    parseTithelyGivingUrl,
+    validateStoredTithelyConfiguration,
+} from '../tithelyEmbed';
+
+const FORM_ID = '59b0fe48-e075-436e-a91e-88011a19d975';
+const OTHER_FORM_ID = 'c7f9f415-e9e4-4f78-a763-f2a9b1da27ca';
+const givingUrl = `https://give.tithe.ly/?formId=${FORM_ID}&amount=100`;
+
+function embedCode(formId = FORM_ID) {
+    return `<button class="tithely-give-button" data-form="${formId}" style="background: #fff">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`;
+}
+
+describe('Tithe.ly giving URL parsing', () => {
+    it('normalizes a valid current-style giving URL and preserves safe parameters', () => {
+        expect(parseTithelyGivingUrl(givingUrl)).toEqual({
+            formId: FORM_ID,
+            givingUrl,
+        });
+    });
+
+    it.each([
+        'http://give.tithe.ly/?formId=' + FORM_ID,
+        'https://give.tithe.ly.example/?formId=' + FORM_ID,
+        'https://give.tithe.ly/give?formId=' + FORM_ID,
+        'https://give.tithe.ly/',
+        'https://give.tithe.ly/?formId=not-a-uuid',
+        `https://give.tithe.ly/?formId=${FORM_ID}&formId=${FORM_ID}`,
+    ])('rejects an unsafe or invalid giving URL: %s', url => {
+        expect(() => parseTithelyGivingUrl(url)).toThrow();
+    });
+});
+
+describe('Tithe.ly embed parsing', () => {
+    it('accepts the official button and deferred script pair', () => {
+        expect(parseTithelyEmbedCode(embedCode())).toEqual({ formId: FORM_ID });
+    });
+
+    it.each([
+        `<button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script defer src="https://example.com/give.js"></script>`,
+        `<button class="tithely-give-button" data-form="${FORM_ID}" onclick="alert(1)">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`,
+        `<button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js">alert(1)</script>`,
+        `<button class="tithely-give-button" data-form="${FORM_ID}">Give</button><script defer src="https://static.tithely.com/give/give.js"></script><script defer src="https://static.tithely.com/give/give.js"></script>`,
+        `<script defer src="https://static.tithely.com/give/give.js"></script>`,
+    ])('rejects unsafe or incomplete embed code', code => {
+        expect(() => parseTithelyEmbedCode(code)).toThrow('Paste the official Tithe.ly embed code.');
+    });
+});
+
+describe('Tithe.ly configuration', () => {
+    it('normalizes a matching URL and current embed snippet', () => {
+        expect(normalizeTithelyConfiguration({ givingUrl, embedCode: embedCode() })).toEqual({
+            givingUrl,
+            embedConfig: { formId: FORM_ID },
+        });
+    });
+
+    it('reuses saved embed configuration when no code is pasted again', () => {
+        expect(normalizeTithelyConfiguration({
+            givingUrl,
+            existingEmbedConfig: { formId: FORM_ID },
+        })).toEqual({
+            givingUrl,
+            embedConfig: { formId: FORM_ID },
+        });
+    });
+
+    it('rejects mismatched URL and embed form IDs', () => {
+        expect(() => normalizeTithelyConfiguration({
+            givingUrl,
+            embedCode: embedCode(OTHER_FORM_ID),
+        })).toThrow('Tithe.ly URL and embed code must use the same form ID.');
+    });
+
+    it('returns an invalid draft status instead of throwing', () => {
+        expect(getTithelyDraftStatus({ givingUrl: 'https://give.tithe.ly/?formId=nope' })).toEqual({
+            configured: false,
+            error: expect.any(String),
+            givingUrl: null,
+            embedConfig: null,
+        });
+    });
+});
+
+describe('stored Tithe.ly configuration and payment methods', () => {
+    const storedEvent = {
+        payment_enabled: true,
+        tithely_giving_url: givingUrl,
+        tithely_embed_config: { formId: FORM_ID },
+        allow_in_person_payment: true,
+    };
+
+    it('validates a persisted snake-case configuration', () => {
+        expect(validateStoredTithelyConfiguration(storedEvent)).toEqual({
+            valid: true,
+            givingUrl,
+            embedConfig: { formId: FORM_ID },
+        });
+    });
+
+    it('rejects a stored form ID mismatch', () => {
+        expect(validateStoredTithelyConfiguration({
+            ...storedEvent,
+            tithely_embed_config: { formId: OTHER_FORM_ID },
+        })).toEqual({
+            valid: false,
+            error: 'Tithe.ly URL and embed code must use the same form ID.',
+        });
+    });
+
+    it('derives valid Tithe.ly and in-person methods in order', () => {
+        expect(getAvailablePaymentMethods(storedEvent)).toEqual(['tithely', 'in_person']);
+    });
+
+    it('offers only in-person payment when stored Tithe.ly config is invalid', () => {
+        expect(getAvailablePaymentMethods({
+            ...storedEvent,
+            tithely_embed_config: { formId: OTHER_FORM_ID },
+        })).toEqual(['in_person']);
+    });
+
+    it('offers no payment methods when payment is disabled', () => {
+        expect(getAvailablePaymentMethods({ ...storedEvent, payment_enabled: false })).toEqual([]);
+    });
+});
