@@ -381,6 +381,7 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                         <PaymentHistory
                             payments={selectedReg.registration_payments || []}
                             onVoid={handleVoidPayment}
+                            onBeginVoid={() => setPaymentError('')}
                             voidingPaymentId={voidingPaymentId}
                             error={paymentError}
                         />

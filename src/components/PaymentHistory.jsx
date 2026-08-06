@@ -58,6 +58,7 @@ function sortPayments(payments) {
 export default function PaymentHistory({
     payments = [],
     onVoid,
+    onBeginVoid,
     voidingPaymentId = null,
     error = '',
 }) {
@@ -87,6 +88,7 @@ export default function PaymentHistory({
     }, [voidTarget]);
 
     function openVoidDialog(payment) {
+        onBeginVoid?.();
         setVoidTarget(payment);
         setVoidReason('');
         setReasonError('');

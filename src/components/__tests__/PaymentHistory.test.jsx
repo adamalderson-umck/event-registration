@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -62,6 +62,28 @@ describe('PaymentHistory', () => {
 
         expect(screen.getByText('No payments have been recorded.')).toBeInTheDocument();
         expect(screen.queryByRole('list')).not.toBeInTheDocument();
+    });
+
+    it('clears a stale payment error before opening the void dialog', async () => {
+        const user = userEvent.setup();
+
+        function HistoryWithStaleError() {
+            const [error, setError] = useState('A previous payment failed.');
+
+            return (
+                <PaymentHistory
+                    payments={payments}
+                    onVoid={vi.fn().mockResolvedValue(undefined)}
+                    onBeginVoid={() => setError('')}
+                    error={error}
+                />
+            );
+        }
+
+        render(<HistoryWithStaleError />);
+        await openVoidDialog(user);
+
+        expect(screen.queryByText('A previous payment failed.')).not.toBeInTheDocument();
     });
 
     it('requires a void reason before calling the void callback', async () => {
