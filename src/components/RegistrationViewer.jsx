@@ -16,11 +16,16 @@ import Input from './ui/Input';
 import Select from './ui/Select';
 import SignatureViewer from './SignatureViewer';
 import ParkingRegistrationTable from './ParkingRegistrationTable';
+import RecordPaymentDialog from './RecordPaymentDialog';
+import PaymentHistory from './PaymentHistory';
 import { downloadCsv } from '../utils/exportCsv';
 import { processCsvFile } from '../utils/importCsv';
 import { getRegistrationWaiverStatuses } from '../utils/registrationWaiverStatus';
 import { printParkingPass } from '../utils/parkingPass';
-import { canMarkRegistrationPaid } from '../utils/paymentStatus';
+import {
+    canRecordRegistrationPayment,
+    formatPaymentSummary,
+} from '../utils/paymentStatus';
 import { useRef } from 'react';
 
 export default function RegistrationViewer({ orgId, eventId, event, organizationName, onBack }) {
@@ -30,8 +35,11 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
     const [statusFilter, setStatusFilter] = useState('all');
     const [selectedReg, setSelectedReg] = useState(null);
     const [cancellingId, setCancellingId] = useState(null);
-    const [markingPaidId, setMarkingPaidId] = useState(null);
     const [cancelError, setCancelError] = useState('');
+    const [paymentDialogRegistration, setPaymentDialogRegistration] = useState(null);
+    const [recordingPayment, setRecordingPayment] = useState(false);
+    const [voidingPaymentId, setVoidingPaymentId] = useState(null);
+    const [paymentError, setPaymentError] = useState('');
 
     // Import states
     const fileInputRef = useRef(null);
@@ -48,7 +56,7 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
         const fetchRegistrations = async () => {
             const { data, error } = await supabase
                 .from('registrations')
-                .select('*')
+                .select('*, registration_payments(*)')
                 .eq('event_id', eventId)
                 .eq('org_id', orgId)
                 .order('created_at', { ascending: false });
@@ -105,32 +113,69 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
         }
     };
 
-    const handleMarkPaid = async (registration) => {
-        if (!canMarkRegistrationPaid(registration) || markingPaidId) return;
+    const applyPaymentResult = (result) => {
+        const updated = {
+            ...result.registration,
+            registration_payments: result.payments || [],
+        };
 
-        setMarkingPaidId(registration.id);
+        setRegistrations((current) => current.map((item) => (
+            item.id === updated.id ? updated : item
+        )));
+        setSelectedReg((current) => current?.id === updated.id ? updated : current);
+        return updated;
+    };
+
+    const handleRecordPayment = async (values) => {
+        if (!paymentDialogRegistration || recordingPayment) return;
+
+        setRecordingPayment(true);
+        setPaymentError('');
         try {
-            const { data, error } = await supabase.rpc('mark_registration_paid', {
-                p_registration_id: registration.id,
+            const { data, error } = await supabase.rpc('record_registration_payment', {
+                p_registration_id: paymentDialogRegistration.id,
                 p_org_id: orgId,
+                p_method: values.method,
+                p_amount: values.amount,
+                p_payment_date: values.paymentDate,
+                p_reference_number: values.referenceNumber,
             });
 
             if (error) throw error;
 
-            const updatedRegistration = Array.isArray(data) ? data[0] : data;
-            if (!updatedRegistration) return;
-
-            setRegistrations((current) => current.map((item) => (
-                item.id === updatedRegistration.id ? updatedRegistration : item
-            )));
-            setSelectedReg((current) => (
-                current?.id === updatedRegistration.id ? updatedRegistration : current
-            ));
+            applyPaymentResult(data);
+            setPaymentDialogRegistration(null);
         } catch (err) {
-            console.error('Failed to mark payment as paid:', err);
-            setCancelError('Failed to mark payment as paid: ' + (err.message || 'Unknown error'));
+            console.error('Failed to record payment:', err);
+            setPaymentError(err.message || 'Unable to record payment.');
+            throw err;
         } finally {
-            setMarkingPaidId(null);
+            setRecordingPayment(false);
+        }
+    };
+
+    const handleVoidPayment = async (payment, reason) => {
+        if (!selectedReg || voidingPaymentId) return;
+
+        setVoidingPaymentId(payment.id);
+        setPaymentError('');
+        try {
+            const { data, error } = await supabase.rpc('void_registration_payment', {
+                p_payment_id: payment.id,
+                p_registration_id: selectedReg.id,
+                p_org_id: orgId,
+                p_void_reason: reason,
+            });
+
+            if (error) throw error;
+
+            applyPaymentResult(data);
+        } catch (err) {
+            console.error('Failed to void payment:', err);
+            setPaymentError(err.message || 'Unable to void payment.');
+            throw err;
+        } finally {
+            setVoidingPaymentId(null);
         }
     };
 
@@ -282,14 +327,16 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                                 <XCircle className="w-4 h-4" /> Cancel Registration
                             </Button>
                         )}
-                        {canMarkRegistrationPaid(selectedReg) && (
+                        {canRecordRegistrationPayment(selectedReg) && (
                             <Button
                                 variant="secondary"
                                 size="sm"
-                                onClick={() => handleMarkPaid(selectedReg)}
-                                loading={markingPaidId === selectedReg.id}
+                                onClick={() => {
+                                    setPaymentError('');
+                                    setPaymentDialogRegistration(selectedReg);
+                                }}
                             >
-                                Mark Paid
+                                Record Payment
                             </Button>
                         )}
                         <Button
@@ -328,13 +375,31 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                         </div>
                     )}
 
-                    <div className="mt-4 pt-4 border-t border-slate-200 text-xs text-slate-400 space-y-1">
-                        <p>Payment: {selectedReg.payment_status || 'N/A'}{selectedReg.payment_method ? ` (${selectedReg.payment_method})` : ''}</p>
+                    <div className="mt-4 border-t border-slate-200 pt-4">
+                        <p className="text-sm font-semibold text-slate-900">{formatPaymentSummary(selectedReg)}</p>
+                        <p className="mt-1 text-xs text-slate-500">Selected method: {selectedReg.payment_method || 'None'}</p>
+                        <PaymentHistory
+                            payments={selectedReg.registration_payments || []}
+                            onVoid={handleVoidPayment}
+                            voidingPaymentId={voidingPaymentId}
+                            error={paymentError}
+                        />
+                    </div>
+                    <div className="mt-4 text-xs text-slate-400">
                         <p>Submitted: {selectedReg.created_at
                             ? new Date(selectedReg.created_at).toLocaleString()
                             : 'N/A'}</p>
                     </div>
                 </Card>
+                {paymentDialogRegistration && (
+                    <RecordPaymentDialog
+                        registration={paymentDialogRegistration}
+                        onSubmit={handleRecordPayment}
+                        onClose={() => setPaymentDialogRegistration(null)}
+                        submitting={recordingPayment}
+                        error={paymentError}
+                    />
+                )}
             </div>
         );
     }
@@ -437,9 +502,8 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                 <ParkingRegistrationTable
                     registrations={filtered}
                     onView={setSelectedReg}
-                    onMarkPaid={handleMarkPaid}
+                    onRecordPayment={setPaymentDialogRegistration}
                     onPrintPass={handlePrintParkingPass}
-                    markingPaidId={markingPaidId}
                 />
             ) : (
                 <Card className="overflow-hidden">
@@ -455,6 +519,7 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Waiver</th>
                                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Media</th>
                                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Payment</th>
                                     <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</th>
                                 </tr>
                             </thead>
@@ -483,6 +548,9 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                                                     {reg.status || 'pending'}
                                                 </span>
                                             </td>
+                                            <td className="px-4 py-3 text-sm text-slate-700">
+                                                {formatPaymentSummary(reg)}
+                                            </td>
                                             <td className="px-4 py-3 text-right">
                                                 <div className="inline-flex items-center gap-3">
                                                     <button
@@ -491,14 +559,13 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                                                     >
                                                         <Eye className="w-3 h-3" /> View
                                                     </button>
-                                                    {canMarkRegistrationPaid(reg) && (
+                                                    {canRecordRegistrationPayment(reg) && (
                                                         <button
                                                             type="button"
-                                                            onClick={() => handleMarkPaid(reg)}
-                                                            disabled={markingPaidId === reg.id}
-                                                            className="text-primary hover:text-primary-dark text-sm font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                                                            onClick={() => setPaymentDialogRegistration(reg)}
+                                                            className="text-primary hover:text-primary-dark text-sm font-medium cursor-pointer"
                                                         >
-                                                            {markingPaidId === reg.id ? 'Marking Paid…' : 'Mark Paid'}
+                                                            Record Payment
                                                         </button>
                                                     )}
                                                 </div>
@@ -510,6 +577,16 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                         </table>
                     </div>
                 </Card>
+            )}
+
+            {paymentDialogRegistration && (
+                <RecordPaymentDialog
+                    registration={paymentDialogRegistration}
+                    onSubmit={handleRecordPayment}
+                    onClose={() => setPaymentDialogRegistration(null)}
+                    submitting={recordingPayment}
+                    error={paymentError}
+                />
             )}
 
             {/* Import Mapping Modal */}
