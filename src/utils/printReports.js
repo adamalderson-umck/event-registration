@@ -5,6 +5,7 @@
  */
 
 import { getRegistrationWaiverStatuses } from './registrationWaiverStatus';
+import { formatPaymentSummary } from './paymentStatus';
 
 const printStyles = `
   <style>
@@ -68,19 +69,38 @@ export function printIndividualRegistration(registration, event) {
       <div class="field-value">${formatValue(registration.form_data?.[field.id])}</div>
     </div>
   `).join('');
+    const paymentRows = (registration.registration_payments || []).map((payment) => {
+        const reference = payment.method === 'check'
+            ? `Check #${payment.reference_number}`
+            : payment.method === 'tithely'
+                ? `Tithe.ly #${payment.reference_number}`
+                : 'Cash';
+
+        return `<tr>
+      <td>${escapeHtml(payment.payment_date)}</td>
+      <td>${escapeHtml(reference)}</td>
+      <td>$${Number(payment.amount).toFixed(2)}</td>
+      <td>${payment.voided_at ? `Voided: ${escapeHtml(payment.void_reason)}` : 'Active'}</td>
+    </tr>`;
+    }).join('');
 
     const html = `<!DOCTYPE html><html><head><title>Registration - ${event.title}</title>${printStyles}</head><body>
     <h1>${event.title}</h1>
     <h2>Individual Registration</h2>
     <div class="meta">
       Status: <strong>${registration.status || 'pending'}</strong> &nbsp;|&nbsp;
-      Payment: <strong>${escapeHtml(registration.payment_status || 'N/A')}</strong> &nbsp;|&nbsp;
+      Payment: <strong>${escapeHtml(formatPaymentSummary(registration) || 'N/A')}</strong> &nbsp;|&nbsp;
       Date: <strong>${registration.created_at
             ? new Date(registration.created_at).toLocaleString()
             : 'N/A'}</strong>
     </div>
     <hr />
     ${rows}
+    ${paymentRows ? `<h2>Payment History</h2>
+    <table>
+      <thead><tr><th>Payment Date</th><th>Method</th><th>Amount</th><th>State</th></tr></thead>
+      <tbody>${paymentRows}</tbody>
+    </table>` : ''}
   </body></html>`;
 
     openPrintWindow(html);
@@ -105,7 +125,7 @@ export function printRegistrationTable(registrations, event) {
         const submitted = reg.created_at
             ? new Date(reg.created_at).toLocaleString()
             : 'N/A';
-        return `<tr>${cells}<td>${waiverStatus}</td><td>${mediaDecision}</td><td>${reg.status || 'pending'}</td><td>${escapeHtml(reg.payment_status || 'N/A')}</td><td>${submitted}</td></tr>`;
+        return `<tr>${cells}<td>${waiverStatus}</td><td>${mediaDecision}</td><td>${reg.status || 'pending'}</td><td>${escapeHtml(formatPaymentSummary(reg) || 'N/A')}</td><td>${submitted}</td></tr>`;
     }).join('');
 
     const html = `<!DOCTYPE html><html><head><title>${event.title} - Registrations</title>${printStyles}</head><body>
@@ -171,9 +191,13 @@ export function printEventSummary(registrations, event) {
     const cancelled = registrations.filter((r) => r.status === 'cancelled').length;
     const pending = registrations.filter((r) => r.status === 'pending').length;
 
-    const paid = registrations.filter((r) => r.payment_status === 'paid').length;
-    const paymentTotal = event.payment_enabled && event.payment_amount
-        ? (paid * event.payment_amount).toFixed(2)
+    const paid = registrations.filter((registration) => registration.payment_status === 'paid').length;
+    const partialPayments = registrations.filter((registration) => registration.payment_status === 'partial').length;
+    const paymentTotal = event.payment_enabled
+        ? registrations.reduce(
+            (sum, registration) => sum + Number(registration.payment_recorded_total || 0),
+            0,
+        ).toFixed(2)
         : null;
 
     const html = `<!DOCTYPE html><html><head><title>${event.title} - Summary</title>${printStyles}</head><body>
@@ -202,7 +226,8 @@ export function printEventSummary(registrations, event) {
         <div class="value">${cancelled}</div>
       </div>
       ${pending > 0 ? `<div class="summary-box"><div class="label">Pending</div><div class="value">${pending}</div></div>` : ''}
-      ${paymentTotal ? `<div class="summary-box"><div class="label">Payment Collected</div><div class="value">$${paymentTotal}</div></div>` : ''}
+      ${partialPayments > 0 ? `<div class="summary-box"><div class="label">Partially Paid</div><div class="value">${partialPayments}</div></div>` : ''}
+      ${paymentTotal !== null ? `<div class="summary-box"><div class="label">Payment Collected</div><div class="value">$${paymentTotal}</div></div>` : ''}
     </div>
     <div class="meta" style="margin-top: 16px;">
       Total registrations: ${registrations.length} &nbsp;|&nbsp;
