@@ -16,16 +16,27 @@ describe('Siteverify registration migration', () => {
         );
     });
 
-    it('revokes direct inserts from both browser roles', () => {
+    it('revokes anonymous inserts without granting them back', () => {
         expect(sql).toMatch(
-            /revoke insert on table public\.registrations from anon, authenticated/i
+            /revoke insert on table public\.registrations from anon/i
+        );
+        expect(sql).not.toMatch(
+            /grant\s+insert\s+on(?:\s+table)?\s+public\.registrations\s+to\s+anon/i
         );
     });
 
-    it('does not grant browser roles another registration insert path', () => {
-        expect(sql).not.toMatch(
-            /grant\s+insert\s+on(?:\s+table)?\s+public\.registrations\s+to\s+(?:anon|authenticated)/i
+    it('limits authenticated CSV imports to organization members and active matching events', () => {
+        expect(sql).toMatch(
+            /create\s+policy\s+"?registrations_authenticated_member_insert"?[\s\S]+on\s+public\.registrations[\s\S]+for\s+insert[\s\S]+to\s+authenticated/i
         );
-        expect(sql).not.toMatch(/create\s+policy[\s\S]+on\s+public\.registrations\s+for\s+insert/i);
+        expect(sql).toMatch(
+            /private\.is_org_member\(registrations\.org_id\)/i
+        );
+        expect(sql).toMatch(
+            /events\.id\s*=\s*registrations\.event_id[\s\S]+events\.org_id\s*=\s*registrations\.org_id[\s\S]+events\.status\s*=\s*'active'/i
+        );
+        expect(sql).not.toMatch(
+            /revoke\s+insert\s+on(?:\s+table)?\s+public\.registrations\s+from\s+[^;]*\bauthenticated\b/i
+        );
     });
 });
