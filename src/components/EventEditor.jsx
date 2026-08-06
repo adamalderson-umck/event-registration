@@ -44,7 +44,6 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState('');
-    const [userDisplayName, setUserDisplayName] = useState('');
     const originalOrganizers = useRef([]);
     const persistedEventId = eventId || createdEventId;
 
@@ -153,23 +152,6 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
         fetchEvent();
     }, [eventId, orgId]);
 
-    // Fetch current user's display name for organizer invites
-    useEffect(() => {
-        const fetchProfile = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('display_name')
-                .eq('id', user.id)
-                .single();
-            if (profile?.display_name) {
-                setUserDisplayName(profile.display_name);
-            }
-        };
-        fetchProfile();
-    }, []);
-
     const handleChange = (key, value) => {
         setEvent((prev) => {
             const update = { ...prev, [key]: value };
@@ -227,6 +209,7 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
 
         try {
             const eventData = await buildEventPayload(event, orgId);
+            let savedEventId = persistedEventId;
 
             if (persistedEventId) {
                 // Update existing
@@ -248,6 +231,7 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
 
                 if (insertErr) throw insertErr;
                 if (!createdEvent?.id) throw new Error('Event was created without a returned ID');
+                savedEventId = createdEvent.id;
                 setCreatedEventId(createdEvent.id);
             }
 
@@ -281,8 +265,7 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
                     try {
                         await supabase.functions.invoke('send-organizer-invite', {
                             body: {
-                                eventTitle: eventData.title,
-                                addedByName: userDisplayName || 'An administrator',
+                                eventId: savedEventId,
                                 recipientEmail: email,
                                 orgId,
                             },
