@@ -66,12 +66,16 @@ describe('deployed Edge Function source inventory', () => {
 
     it('records every function JWT setting in config.toml', () => {
         for (const [slug, metadata] of Object.entries(EXPECTED_FUNCTIONS)) {
-            const escapedSlug = slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const block = new RegExp(
-                `\\[functions\\.${escapedSlug}\\][\\s\\S]*?verify_jwt\\s*=\\s*${metadata.verifyJwt}(?=\\s*\\[|$)`,
-                'i'
+            const header = `[functions.${slug}]`;
+            const blockStart = config.indexOf(header);
+            const nextSection = config.indexOf('\n[', blockStart + header.length);
+            const block = blockStart === -1
+                ? ''
+                : config.slice(blockStart, nextSection === -1 ? undefined : nextSection);
+
+            expect(block, `missing config for ${slug}`).toMatch(
+                new RegExp(`verify_jwt\\s*=\\s*${metadata.verifyJwt}`, 'i')
             );
-            expect(config, `missing config for ${slug}`).toMatch(block);
         }
     });
 
