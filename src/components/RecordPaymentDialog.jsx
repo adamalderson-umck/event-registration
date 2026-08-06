@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Button from './ui/Button';
 import Card from './ui/Card';
 import Input from './ui/Input';
@@ -29,6 +29,12 @@ function FieldError({ id, message }) {
     return <p id={id} role="alert" className="mt-1 text-sm text-danger">{message}</p>;
 }
 
+function getFocusableElements(container) {
+    return Array.from(container.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => element instanceof HTMLElement && element.getAttribute('aria-hidden') !== 'true');
+}
+
 export default function RecordPaymentDialog({
     registration,
     onSubmit,
@@ -37,6 +43,8 @@ export default function RecordPaymentDialog({
     error = '',
     today,
 }) {
+    const methodSelectRef = useRef(null);
+    const titleRef = useRef(null);
     const todayValue = getTodayValue(today);
     const [method, setMethod] = useState('cash');
     const [amount, setAmount] = useState('');
@@ -46,6 +54,21 @@ export default function RecordPaymentDialog({
     const remaining = getPaymentRemainingAmount(registration);
     const expectedAmount = registration?.payment_expected_amount;
     const referenceLabel = method === 'check' ? 'Check number' : 'Transaction number';
+
+    useEffect(() => {
+        const previouslyFocusedElement = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        const initialFocusTarget = methodSelectRef.current || titleRef.current;
+
+        initialFocusTarget?.focus();
+
+        return () => {
+            if (previouslyFocusedElement?.isConnected) {
+                previouslyFocusedElement.focus();
+            }
+        };
+    }, []);
 
     function clearFieldError(field) {
         setFieldErrors((current) => {
@@ -103,6 +126,35 @@ export default function RecordPaymentDialog({
         });
     }
 
+    function handleDialogKeyDown(event) {
+        if (event.key === 'Escape') {
+            if (!submitting) {
+                onClose();
+            }
+            return;
+        }
+
+        if (event.key !== 'Tab') {
+            return;
+        }
+
+        const focusableElements = getFocusableElements(event.currentTarget);
+        const firstFocusableElement = focusableElements[0];
+        const lastFocusableElement = focusableElements.at(-1);
+
+        if (!firstFocusableElement || !lastFocusableElement) {
+            return;
+        }
+
+        if (event.shiftKey && document.activeElement === firstFocusableElement) {
+            event.preventDefault();
+            lastFocusableElement.focus();
+        } else if (!event.shiftKey && document.activeElement === lastFocusableElement) {
+            event.preventDefault();
+            firstFocusableElement.focus();
+        }
+    }
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
             <Card
@@ -110,9 +162,10 @@ export default function RecordPaymentDialog({
                 aria-modal="true"
                 aria-labelledby="record-payment-dialog-title"
                 className="w-full max-w-lg p-6"
+                onKeyDown={handleDialogKeyDown}
             >
                 <div className="mb-5">
-                    <h2 id="record-payment-dialog-title" className="text-xl font-bold text-slate-900">Record payment</h2>
+                    <h2 ref={titleRef} id="record-payment-dialog-title" tabIndex="-1" className="text-xl font-bold text-slate-900">Record payment</h2>
                     <div className="mt-3 space-y-1 text-sm text-slate-600">
                         <p>Recorded: {formatCurrency(registration?.payment_recorded_total)}</p>
                         {expectedAmount != null && <p>Expected: {formatCurrency(expectedAmount)}</p>}
@@ -127,6 +180,7 @@ export default function RecordPaymentDialog({
                         <div>
                             <Label htmlFor="record-payment-method">Payment method</Label>
                             <Select
+                                ref={methodSelectRef}
                                 id="record-payment-method"
                                 value={method}
                                 onChange={handleMethodChange}

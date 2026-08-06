@@ -35,6 +35,63 @@ async function enterAmount(user, value) {
 }
 
 describe('RecordPaymentDialog', () => {
+    it('moves focus to the payment method when opened', () => {
+        renderDialog();
+
+        expect(screen.getByLabelText('Payment method')).toHaveFocus();
+    });
+
+    it('keeps Tab focus within the dialog', async () => {
+        const user = userEvent.setup();
+        renderDialog();
+        screen.getByLabelText('Payment method').focus();
+
+        await user.tab({ shift: true });
+        expect(screen.getByRole('button', { name: 'Record payment' })).toHaveFocus();
+
+        await user.tab();
+        expect(screen.getByLabelText('Payment method')).toHaveFocus();
+    });
+
+    it('closes when Escape is pressed while idle', async () => {
+        const user = userEvent.setup();
+        const { onClose } = renderDialog();
+
+        await user.keyboard('{Escape}');
+
+        expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not close when Escape is pressed while submitting', async () => {
+        const user = userEvent.setup();
+        const { onClose } = renderDialog({ submitting: true });
+
+        await user.keyboard('{Escape}');
+
+        expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('restores focus to the triggering control when closed', () => {
+        const trigger = document.createElement('button');
+        document.body.append(trigger);
+        trigger.focus();
+
+        const { unmount } = render(
+            <RecordPaymentDialog
+                registration={registration}
+                onSubmit={vi.fn()}
+                onClose={vi.fn()}
+                today="2026-08-05"
+            />,
+        );
+
+        screen.getByLabelText('Payment method').focus();
+        unmount();
+
+        expect(trigger).toHaveFocus();
+        trigger.remove();
+    });
+
     it('submits a cash payment with a numeric amount and no reference number', async () => {
         const user = userEvent.setup();
         const { onSubmit } = renderDialog();
