@@ -99,6 +99,8 @@ If `supabase/.gitignore` was not generated, omit it from `git add`.
 
 ### Task 2: Build the migration safety validator with tests
 
+> **Scope correction (2026-08-06):** The approved design limits this validator to migration filenames, canonical applied-history membership, version uniqueness/order, and credential-shaped values. It must treat migration SQL as opaque beyond the credential scan. The Tithe.ly function contract is verified against the exact pending migration in Task 6 and against the resulting local PostgreSQL function in Task 8. Any Tithe.ly SQL-parser examples later in this task are superseded by this correction and must not be implemented.
+
 **Files:**
 - Create: `tools/check-supabase-migrations.test.mjs`
 - Create: `tools/check-supabase-migrations.mjs`
