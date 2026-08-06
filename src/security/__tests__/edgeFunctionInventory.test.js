@@ -16,7 +16,7 @@ const EXPECTED_FUNCTIONS = Object.freeze({
     },
     'send-event-reminders': {
         version: 2,
-        verifyJwt: false,
+        verifyJwt: true,
         hash: 'f30b5437e47f375a2933e59de9c0fc922e4d2a22126781af37547ef49727ac0e',
     },
     'send-organizer-invite': {
@@ -26,7 +26,7 @@ const EXPECTED_FUNCTIONS = Object.freeze({
     },
     'send-registration-email': {
         version: 7,
-        verifyJwt: false,
+        verifyJwt: true,
         hash: 'ade3a9d9e03ac124dd386cf1d44b599d6f7ad15fe48668ca030a2657d954b397',
     },
     'submit-registration': {

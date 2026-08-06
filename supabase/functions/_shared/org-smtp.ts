@@ -1,4 +1,4 @@
-import { SMTPClient } from 'npm:emailjs@4.0.3';
+import { SMTPClient } from "emailjs";
 
 export interface SmtpConfig {
   host: string;
@@ -12,7 +12,7 @@ interface RpcClient {
   rpc(
     name: string,
     args: Record<string, string>,
-  ): Promise<{ data: string | null; error: unknown }>;
+  ): PromiseLike<{ data: string | null; error: unknown }>;
 }
 
 function safeHeader(value: string, errorCode: string): string {
@@ -24,8 +24,10 @@ export async function loadSmtpPassword(
   client: RpcClient,
   orgId: string,
 ): Promise<string> {
-  const { data, error } = await client.rpc('get_org_smtp_secret', { p_org_id: orgId });
-  if (error || !data) throw new Error('smtp_not_configured');
+  const { data, error } = await client.rpc("get_org_smtp_secret", {
+    p_org_id: orgId,
+  });
+  if (error || !data) throw new Error("smtp_not_configured");
   return data;
 }
 
@@ -47,13 +49,16 @@ export async function sendHtmlEmail(input: {
   });
   const fromName = safeHeader(
     input.config.fromName || input.orgName,
-    'invalid_smtp_from_name',
+    "invalid_smtp_from_name",
   );
 
   await client.sendAsync({
-    from: `"${fromName}" <${safeHeader(input.config.fromEmail, 'invalid_smtp_from_email')}>`,
-    to: safeHeader(input.to, 'invalid_smtp_recipient'),
-    subject: safeHeader(input.subject, 'invalid_smtp_subject'),
+    from: `"${fromName}" <${
+      safeHeader(input.config.fromEmail, "invalid_smtp_from_email")
+    }>`,
+    to: safeHeader(input.to, "invalid_smtp_recipient"),
+    subject: safeHeader(input.subject, "invalid_smtp_subject"),
+    text: null,
     attachment: [{ data: input.html, alternative: true }],
   });
 }

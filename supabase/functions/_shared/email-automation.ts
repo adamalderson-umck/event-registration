@@ -2,8 +2,8 @@ export function isTrustedAutomationRequest(
   request: Request,
   serviceRoleKey: string,
 ): boolean {
-  return serviceRoleKey.length > 0
-    && request.headers.get('authorization') === `Bearer ${serviceRoleKey}`;
+  return serviceRoleKey.length > 0 &&
+    request.headers.get("authorization") === `Bearer ${serviceRoleKey}`;
 }
 
 export function registrationDeliveryKey(
