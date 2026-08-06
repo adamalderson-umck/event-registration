@@ -1,4 +1,5 @@
 const RECORDABLE_PAYMENT_STATUSES = new Set(['pending', 'partial', 'paid']);
+const TITHELY_REFERENCE_UNIQUE_INDEX = 'registration_payments_active_tithely_reference_org_key';
 
 function toAmount(value) {
     const amount = Number(value);
@@ -21,6 +22,20 @@ export function formatCurrency(value) {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     }).format(toAmount(value));
+}
+
+export function formatRecordPaymentError(error) {
+    const message = error?.message || '';
+    const details = error?.details || '';
+
+    if (
+        error?.code === '23505'
+        && `${message} ${details}`.includes(TITHELY_REFERENCE_UNIQUE_INDEX)
+    ) {
+        return 'This Tithe.ly Transaction ID has already been recorded.';
+    }
+
+    return message || 'Unable to record payment.';
 }
 
 export function getPaymentRemainingAmount(registration) {

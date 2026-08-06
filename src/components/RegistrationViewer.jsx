@@ -24,6 +24,7 @@ import { getRegistrationWaiverStatuses } from '../utils/registrationWaiverStatus
 import { printParkingPass } from '../utils/parkingPass';
 import {
     canRecordRegistrationPayment,
+    formatRecordPaymentError,
     formatPaymentSummary,
 } from '../utils/paymentStatus';
 import { useRef } from 'react';
@@ -147,8 +148,7 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
             setPaymentDialogRegistration(null);
         } catch (err) {
             console.error('Failed to record payment:', err);
-            setPaymentError(err.message || 'Unable to record payment.');
-            throw err;
+            setPaymentError(formatRecordPaymentError(err));
         } finally {
             setRecordingPayment(false);
         }

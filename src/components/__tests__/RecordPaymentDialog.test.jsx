@@ -134,16 +134,16 @@ describe('RecordPaymentDialog', () => {
         }));
     });
 
-    it('requires a transaction number before submitting a Tithe.ly payment', async () => {
+    it('requires a Transaction ID before submitting a Tithe.ly payment', async () => {
         const user = userEvent.setup();
         const { onSubmit } = renderDialog();
 
         await user.selectOptions(screen.getByLabelText('Payment method'), 'tithely');
-        expect(screen.getByLabelText(/^Transaction number/)).toBeInTheDocument();
+        expect(screen.getByLabelText(/^Transaction ID/)).toBeInTheDocument();
         await enterAmount(user, '15');
         await user.click(screen.getByRole('button', { name: 'Record payment' }));
 
-        expect(screen.getByRole('alert')).toHaveTextContent('Enter the Tithe.ly transaction number.');
+        expect(screen.getByRole('alert')).toHaveTextContent('Enter the Tithe.ly Transaction ID.');
         expect(onSubmit).not.toHaveBeenCalled();
     });
 
