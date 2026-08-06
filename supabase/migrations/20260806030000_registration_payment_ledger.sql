@@ -12,7 +12,12 @@ CREATE TABLE public.registration_payments (
   registration_id uuid NOT NULL REFERENCES public.registrations(id) ON DELETE RESTRICT,
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,
   payment_method text NOT NULL CHECK (payment_method IN ('cash', 'check', 'tithely')),
-  amount numeric(12, 2) NOT NULL CHECK (amount > 0),
+  amount numeric(12, 2) NOT NULL CHECK (
+    amount > 0
+    AND amount <> 'NaN'::numeric
+    AND amount <> 'Infinity'::numeric
+    AND amount <> '-Infinity'::numeric
+  ),
   payment_date date NOT NULL CHECK (payment_date <= CURRENT_DATE),
   reference_number text,
   recorded_by uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
@@ -258,13 +263,22 @@ BEGIN
 
   v_payment_method := pg_catalog.lower(pg_catalog.btrim(p_payment_method));
   v_reference_number := NULLIF(pg_catalog.btrim(p_reference_number), '');
-  v_amount := pg_catalog.round(p_amount, 2);
 
   IF v_payment_method IS NULL OR v_payment_method NOT IN ('cash', 'check', 'tithely') THEN
     RAISE EXCEPTION 'Payment method must be cash, check, or tithely';
   END IF;
 
-  IF v_amount IS NULL OR v_amount <= 0 THEN
+  IF p_amount IS NULL
+    OR p_amount <= 0
+    OR p_amount = 'NaN'::numeric
+    OR p_amount = 'Infinity'::numeric
+    OR p_amount = '-Infinity'::numeric THEN
+    RAISE EXCEPTION 'Amount must be positive';
+  END IF;
+
+  v_amount := pg_catalog.round(p_amount, 2);
+
+  IF v_amount <= 0 THEN
     RAISE EXCEPTION 'Amount must be positive';
   END IF;
 
