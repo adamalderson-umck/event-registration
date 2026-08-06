@@ -1,6 +1,6 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import RegistrationPaymentStep from '../RegistrationPaymentStep';
 
@@ -20,24 +20,22 @@ const registration = {
 };
 
 describe('RegistrationPaymentStep', () => {
-    it('hands off the unchanged registration only after the local Tithe.ly action', () => {
-        const onComplete = vi.fn();
-        render(<RegistrationPaymentStep event={event} registration={registration} onComplete={onComplete} />);
+    it('keeps a Tithe.ly registration on its pending payment page', () => {
+        render(<RegistrationPaymentStep event={event} registration={registration} />);
 
-        expect(onComplete).not.toHaveBeenCalled();
-        fireEvent.click(screen.getByRole('button', { name: "I've finished with Tithe.ly" }));
-
-        expect(onComplete).toHaveBeenCalledWith(registration);
-        expect(onComplete).not.toHaveBeenCalledWith(expect.objectContaining({ payment_status: 'paid' }));
+        expect(screen.getByRole('heading', { name: 'Complete your payment with Tithe.ly' })).toBeInTheDocument();
+        expect(screen.getByText('Registration received — payment pending')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /continue|finished/i })).not.toBeInTheDocument();
     });
 
-    it('preserves the pending Pay in Person handoff without a client-side write', () => {
-        const onComplete = vi.fn();
-        const inPersonRegistration = { ...registration, payment_method: 'in_person' };
-        render(<RegistrationPaymentStep event={event} registration={inPersonRegistration} onComplete={onComplete} />);
+    it('does not render a Tithe.ly step for an in-person registration', () => {
+        const { container } = render(
+            <RegistrationPaymentStep
+                event={event}
+                registration={{ ...registration, payment_method: 'in_person' }}
+            />,
+        );
 
-        fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-
-        expect(onComplete).toHaveBeenCalledWith(inPersonRegistration);
+        expect(container).toBeEmptyDOMElement();
     });
 });

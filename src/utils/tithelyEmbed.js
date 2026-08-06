@@ -1,5 +1,6 @@
 const TITHELY_GIVING_ORIGIN = 'https://give.tithe.ly';
-const TITHELY_SCRIPT_URL = 'https://static.tithely.com/give/give.js';
+export const TITHELY_SCRIPT_URL = 'https://static.tithely.com/give/give.js';
+
 export const TITHELY_ERROR_CODES = Object.freeze({
     MISSING_URL: 'missing_url',
     INVALID_URL: 'invalid_url',
@@ -17,13 +18,24 @@ const TITHELY_ERROR_MESSAGES = Object.freeze({
     [TITHELY_ERROR_CODES.INVALID_EMBED_FORM_ID]: 'The Tithe.ly embed code must include one valid form ID.',
     [TITHELY_ERROR_CODES.MISSING_EMBED]: 'Paste the official Tithe.ly embed code.',
     [TITHELY_ERROR_CODES.INVALID_EMBED]: 'Use the official Tithe.ly embed button and script.',
-    [TITHELY_ERROR_CODES.MISMATCH]: 'Tithe.ly URL and embed code must use the same form ID.',
+    [TITHELY_ERROR_CODES.MISMATCH]: 'Tithe.ly URL and embed code must use the same form, location, fund, amount, and frequency.',
 });
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isUuid(value) {
     return typeof value === 'string' && UUID_PATTERN.test(value);
 }
+
+const STRUCTURED_FIELDS = Object.freeze([
+    { key: 'formId', query: 'formId', attribute: 'data-form', required: true, validate: isUuid },
+    { key: 'locationId', query: 'locationId', attribute: 'data-location', validate: isUuid },
+    { key: 'fundId', query: 'fundId', attribute: 'data-fund', validate: isUuid },
+    { key: 'amount', query: 'amount', attribute: 'data-amount', validate: value => /^\d+$/.test(value) && Number(value) > 0 },
+    { key: 'frequency', query: 'frequency', attribute: 'data-frequency', validate: value => /^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(value) },
+]);
+const BUTTON_ATTRIBUTES = new Set(['class', 'style', ...STRUCTURED_FIELDS.map(field => field.attribute)]);
+const SAVED_CONFIG_KEYS = new Set(STRUCTURED_FIELDS.map(field => field.key));
 
 function fail(code) {
     const error = new Error(TITHELY_ERROR_MESSAGES[code]);
@@ -39,6 +51,81 @@ function getEmbedConfig(configuration) {
     return configuration?.tithely_embed_config
         ?? configuration?.tithelyEmbedConfig
         ?? configuration?.embedConfig;
+}
+
+function readUrlConfiguration(url) {
+    return STRUCTURED_FIELDS.reduce((result, field) => {
+        const values = url.searchParams.getAll(field.query);
+
+        if (values.length > 1 || (field.required && values.length !== 1)) {
+            fail(field.key === 'formId'
+                ? TITHELY_ERROR_CODES.INVALID_URL_FORM_ID
+                : TITHELY_ERROR_CODES.INVALID_URL);
+        }
+
+        if (values.length === 1) {
+            if (!field.validate(values[0])) {
+                fail(field.key === 'formId'
+                    ? TITHELY_ERROR_CODES.INVALID_URL_FORM_ID
+                    : TITHELY_ERROR_CODES.INVALID_URL);
+            }
+            result[field.key] = values[0];
+        }
+
+        return result;
+    }, {});
+}
+
+function readButtonConfiguration(button) {
+    return STRUCTURED_FIELDS.reduce((result, field) => {
+        const value = button.getAttribute(field.attribute);
+
+        if (field.required && !value) {
+            fail(TITHELY_ERROR_CODES.INVALID_EMBED_FORM_ID);
+        }
+
+        if (value != null) {
+            if (!field.validate(value)) {
+                fail(field.key === 'formId'
+                    ? TITHELY_ERROR_CODES.INVALID_EMBED_FORM_ID
+                    : TITHELY_ERROR_CODES.INVALID_EMBED);
+            }
+            result[field.key] = value;
+        }
+
+        return result;
+    }, {});
+}
+
+function normalizeSavedEmbedConfig(embedConfig) {
+    if (embedConfig == null) {
+        fail(TITHELY_ERROR_CODES.MISSING_EMBED);
+    }
+
+    if (
+        typeof embedConfig !== 'object'
+        || Array.isArray(embedConfig)
+        || Object.keys(embedConfig).some(key => !SAVED_CONFIG_KEYS.has(key))
+    ) {
+        fail(TITHELY_ERROR_CODES.INVALID_EMBED);
+    }
+
+    return STRUCTURED_FIELDS.reduce((result, field) => {
+        const value = embedConfig[field.key];
+
+        if (field.required && !value) {
+            fail(TITHELY_ERROR_CODES.INVALID_EMBED);
+        }
+
+        if (value != null) {
+            if (typeof value !== 'string' || !field.validate(value)) {
+                fail(TITHELY_ERROR_CODES.INVALID_EMBED);
+            }
+            result[field.key] = value;
+        }
+
+        return result;
+    }, {});
 }
 
 export function parseTithelyGivingUrl(value) {
@@ -65,12 +152,7 @@ export function parseTithelyGivingUrl(value) {
         fail(TITHELY_ERROR_CODES.INVALID_URL);
     }
 
-    const formIds = url.searchParams.getAll('formId');
-    if (formIds.length !== 1 || !isUuid(formIds[0])) {
-        fail(TITHELY_ERROR_CODES.INVALID_URL_FORM_ID);
-    }
-
-    return { formId: formIds[0], givingUrl: url.toString() };
+    return { ...readUrlConfiguration(url), givingUrl: url.toString() };
 }
 
 export function parseTithelyEmbedCode(embedCode) {
@@ -108,10 +190,8 @@ export function parseTithelyEmbedCode(embedCode) {
         fail(TITHELY_ERROR_CODES.INVALID_EMBED);
     }
 
-    const buttonAttributes = [...button.attributes];
-    const hasInvalidButtonAttribute = buttonAttributes.some(attribute => (
-        attribute.name.startsWith('on')
-        || !['class', 'data-form', 'style'].includes(attribute.name)
+    const hasInvalidButtonAttribute = [...button.attributes].some(attribute => (
+        attribute.name.startsWith('on') || !BUTTON_ATTRIBUTES.has(attribute.name)
     ));
     if (
         hasInvalidButtonAttribute
@@ -119,9 +199,6 @@ export function parseTithelyEmbedCode(embedCode) {
         || button.children.length
     ) {
         fail(TITHELY_ERROR_CODES.INVALID_EMBED);
-    }
-    if (!isUuid(button.getAttribute('data-form'))) {
-        fail(TITHELY_ERROR_CODES.INVALID_EMBED_FORM_ID);
     }
 
     const scriptAttributes = [...script.attributes];
@@ -135,7 +212,7 @@ export function parseTithelyEmbedCode(embedCode) {
         fail(TITHELY_ERROR_CODES.INVALID_EMBED);
     }
 
-    return { formId: button.getAttribute('data-form') };
+    return readButtonConfiguration(button);
 }
 
 export function normalizeTithelyConfiguration({ givingUrl, embedCode = '', existingEmbedConfig = null } = {}) {
@@ -148,26 +225,28 @@ export function normalizeTithelyConfiguration({ givingUrl, embedCode = '', exist
     }
 
     const parsedUrl = parseTithelyGivingUrl(givingUrl);
-    const embedConfig = pastedEmbedCode
+    const parsedEmbedConfig = pastedEmbedCode
         ? parseTithelyEmbedCode(pastedEmbedCode)
         : normalizeSavedEmbedConfig(existingEmbedConfig);
+    const urlConfig = Object.fromEntries(
+        STRUCTURED_FIELDS
+            .filter(({ key }) => parsedUrl[key] != null)
+            .map(({ key }) => [key, parsedUrl[key]]),
+    );
+    const hasMismatch = STRUCTURED_FIELDS.some(({ key }) => (
+        urlConfig[key] != null
+        && parsedEmbedConfig[key] != null
+        && urlConfig[key].toLowerCase() !== parsedEmbedConfig[key].toLowerCase()
+    ));
 
-    if (parsedUrl.formId.toLowerCase() !== embedConfig.formId.toLowerCase()) {
+    if (hasMismatch) {
         fail(TITHELY_ERROR_CODES.MISMATCH);
     }
 
-    return { givingUrl: parsedUrl.givingUrl, embedConfig };
-}
-
-function normalizeSavedEmbedConfig(embedConfig) {
-    if (embedConfig == null) {
-        fail(TITHELY_ERROR_CODES.MISSING_EMBED);
-    }
-    if (!isUuid(embedConfig?.formId)) {
-        fail(TITHELY_ERROR_CODES.INVALID_EMBED);
-    }
-
-    return { formId: embedConfig.formId };
+    return {
+        givingUrl: parsedUrl.givingUrl,
+        embedConfig: { ...urlConfig, ...parsedEmbedConfig },
+    };
 }
 
 export function getTithelyDraftStatus(configuration) {

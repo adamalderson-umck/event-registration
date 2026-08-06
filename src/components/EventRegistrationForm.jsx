@@ -402,16 +402,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
     }
 
     if (phase === 'payment') {
-        return (
-            <RegistrationPaymentStep
-                event={event}
-                registration={createdRegistration}
-                onComplete={(completedRegistration) => {
-                    setCreatedRegistration(completedRegistration);
-                    setPhase('success');
-                }}
-            />
-        );
+        return <RegistrationPaymentStep event={event} registration={createdRegistration} />;
     }
 
     // Success state
@@ -456,6 +447,9 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 onBack={handleBack}
                 onSubmit={handleSubmit}
                 submitting={submitting || (TURNSTILE_SITE_KEY && !turnstileToken && currentPage === pages.length - 1)}
+                submitLabel={paymentMethod === 'tithely'
+                    ? 'Submit Registration & Continue to Tithe.ly'
+                    : 'Submit Registration'}
                 beforeFields={
                     isFull && event.waitlist_enabled
                         ? <WaitlistNotice waitlistCount={event.waitlist_count || 0} />

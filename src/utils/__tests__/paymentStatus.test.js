@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     canRecordRegistrationPayment,
     formatCurrency,
+    formatRecordPaymentError,
     formatPaymentSummary,
     getActivePayments,
     getPaymentRemainingAmount,
@@ -21,6 +22,18 @@ describe('payment status helpers', () => {
     it('formats USD values with two decimal places', () => {
         expect(formatCurrency(25)).toBe('$25.00');
         expect(formatCurrency('5.5')).toBe('$5.50');
+    });
+
+    it('uses Transaction ID wording for the Tithe.ly duplicate-reference constraint', () => {
+        expect(formatRecordPaymentError({
+            code: '23505',
+            message: 'duplicate key value violates unique constraint "registration_payments_active_tithely_reference_org_key"',
+        })).toBe('This Tithe.ly Transaction ID has already been recorded.');
+    });
+
+    it('preserves other record-payment errors and supplies a fallback', () => {
+        expect(formatRecordPaymentError({ message: 'Network unavailable' })).toBe('Network unavailable');
+        expect(formatRecordPaymentError(null)).toBe('Unable to record payment.');
     });
 
     it.each([undefined, null, ''])('returns no remaining amount when the expected amount is %s', (payment_expected_amount) => {

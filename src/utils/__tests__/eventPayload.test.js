@@ -3,8 +3,17 @@ import { createEventPreset } from '../../config/eventPresets';
 import { buildDuplicateEventPayload, buildEventPayload } from '../eventPayload';
 
 const TITHELY_FORM_ID = '59b0fe48-e075-436e-a91e-88011a19d975';
-const TITHELY_GIVING_URL = `https://give.tithe.ly/?formId=${TITHELY_FORM_ID}&amount=100`;
-const TITHELY_EMBED_CODE = `<button class="tithely-give-button" data-form="${TITHELY_FORM_ID}" style="background: #fff">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`;
+const TITHELY_LOCATION_ID = 'c9f19096-4a76-4ea1-be56-d7f16d1e5241';
+const TITHELY_FUND_ID = 'c4c11990-779e-4582-ba46-bf510ed3a37f';
+const TITHELY_GIVING_URL = `https://give.tithe.ly/?formId=${TITHELY_FORM_ID}&locationId=${TITHELY_LOCATION_ID}&fundId=${TITHELY_FUND_ID}&amount=10000&frequency=one-time`;
+const TITHELY_EMBED_CODE = `<button class="tithely-give-button" data-form="${TITHELY_FORM_ID}" data-location="${TITHELY_LOCATION_ID}" data-fund="${TITHELY_FUND_ID}" data-amount="10000" data-frequency="one-time" style="background: #fff">Give</button><script defer src="https://static.tithely.com/give/give.js"></script>`;
+const TITHELY_EMBED_CONFIG = {
+    formId: TITHELY_FORM_ID,
+    locationId: TITHELY_LOCATION_ID,
+    fundId: TITHELY_FUND_ID,
+    amount: '10000',
+    frequency: 'one-time',
+};
 
 const createParkingDraft = () => {
     const preset = createEventPreset('parking');
@@ -53,7 +62,7 @@ describe('event payloads', () => {
             payment_enabled: true,
             payment_amount: 100,
             tithely_giving_url: TITHELY_GIVING_URL,
-            tithely_embed_config: { formId: TITHELY_FORM_ID },
+            tithely_embed_config: TITHELY_EMBED_CONFIG,
             org_id: 'org-1',
         });
         expect(payload).not.toHaveProperty('tithely_embed_code');
@@ -90,7 +99,7 @@ describe('event payloads', () => {
         });
     });
 
-    it('keeps an invalid giving URL when Pay in Person remains available', async () => {
+    it('rejects invalid Tithe.ly configuration even when Pay in Person remains available', async () => {
         const event = {
             ...createParkingDraft(),
             eventType: 'standard',
@@ -99,12 +108,22 @@ describe('event payloads', () => {
             tithelyEmbedConfig: null,
         };
 
-        const payload = await buildEventPayload(event, 'org-1');
+        await expect(buildEventPayload(event, 'org-1')).rejects.toThrow(
+            'Use an HTTPS give.tithe.ly giving URL.',
+        );
+    });
 
-        expect(payload).toMatchObject({
-            tithely_giving_url: 'https://example.org/give',
-            tithely_embed_config: null,
-        });
+    it('rejects a giving URL without an embed even when Pay in Person remains available', async () => {
+        const event = {
+            ...createParkingDraft(),
+            eventType: 'standard',
+            tithelyEmbedCode: '',
+            tithelyEmbedConfig: null,
+        };
+
+        await expect(buildEventPayload(event, 'org-1')).rejects.toThrow(
+            'Paste the official Tithe.ly embed code.',
+        );
     });
 
     it('requires a valid payment path for active payment-enabled events', async () => {
@@ -133,7 +152,7 @@ describe('event payloads', () => {
 
         expect(payload).toMatchObject({
             tithely_giving_url: TITHELY_GIVING_URL,
-            tithely_embed_config: { formId: TITHELY_FORM_ID },
+            tithely_embed_config: TITHELY_EMBED_CONFIG,
         });
     });
 
@@ -143,7 +162,7 @@ describe('event payloads', () => {
             event_type: 'parking',
             allow_in_person_payment: true,
             tithely_giving_url: TITHELY_GIVING_URL,
-            tithely_embed_config: { formId: TITHELY_FORM_ID },
+            tithely_embed_config: TITHELY_EMBED_CONFIG,
             id: 'event-1',
             created_at: '2026-01-01T00:00:00Z',
             updated_at: '2026-01-02T00:00:00Z',
@@ -164,7 +183,7 @@ describe('event payloads', () => {
             event_type: 'parking',
             allow_in_person_payment: true,
             tithely_giving_url: TITHELY_GIVING_URL,
-            tithely_embed_config: { formId: TITHELY_FORM_ID },
+            tithely_embed_config: TITHELY_EMBED_CONFIG,
         });
         expect(payload).not.toHaveProperty('id');
     });

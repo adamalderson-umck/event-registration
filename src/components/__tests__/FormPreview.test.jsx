@@ -129,6 +129,20 @@ describe('FormPreview', () => {
         expect(screen.getByText(/Submit Registration/)).toBeInTheDocument();
     });
 
+    it('uses a caller-provided final submit label', () => {
+        render(
+            <FormPreview
+                event={baseEvent}
+                submitLabel="Submit Registration & Continue to Tithe.ly"
+                onSubmit={vi.fn()}
+            />,
+        );
+
+        expect(screen.getByRole('button', {
+            name: 'Submit Registration & Continue to Tithe.ly',
+        })).toBeInTheDocument();
+    });
+
     it('shows waiver placeholder in readOnly mode when waivers are configured', () => {
         const waiverEvent = {
             ...baseEvent,

@@ -21,6 +21,7 @@ import { resolveTheme, resolveHeaderImage } from '../constants/themePresets';
  * @param {Function} [props.onBack]      - Previous-page handler
  * @param {Function} [props.onSubmit]    - Form submit handler (e) => void
  * @param {boolean} [props.submitting]   - Show loading state on submit button
+ * @param {string} [props.submitLabel]   - Final-page submit action label
  * @param {React.ReactNode} [props.waiverSlot]   - Waiver component to render on last page
  * @param {React.ReactNode} [props.captchaSlot]  - CAPTCHA widget to render on last page
  * @param {React.ReactNode} [props.paymentSlot]  - Payment-method component to render on last page
@@ -37,6 +38,7 @@ export default function FormPreview({
     onBack,
     onSubmit,
     submitting = false,
+    submitLabel = 'Submit Registration',
     waiverSlot,
     captchaSlot,
     paymentSlot,
@@ -265,7 +267,7 @@ export default function FormPreview({
                                     style={{ backgroundColor: theme.primary }}
                                 >
                                     <Send className="w-4 h-4" />
-                                    {isFull && event.waitlist_enabled ? 'Join Waitlist' : 'Submit Registration'}
+                                    {isFull && event.waitlist_enabled ? 'Join Waitlist' : submitLabel}
                                 </Button>
                             )}
                         </div>
@@ -288,7 +290,7 @@ export default function FormPreview({
                                 <Send className="w-4 h-4" />
                                 {isMultiPage && !isLastPage
                                     ? 'Next'
-                                    : (isFull && event.waitlist_enabled ? 'Join Waitlist' : 'Submit Registration')
+                                    : (isFull && event.waitlist_enabled ? 'Join Waitlist' : submitLabel)
                                 }
                             </div>
                         </div>

@@ -53,7 +53,7 @@ export default function RecordPaymentDialog({
     const [fieldErrors, setFieldErrors] = useState({});
     const remaining = getPaymentRemainingAmount(registration);
     const expectedAmount = registration?.payment_expected_amount;
-    const referenceLabel = method === 'check' ? 'Check number' : 'Transaction number';
+    const referenceLabel = method === 'check' ? 'Check number' : 'Transaction ID';
 
     useEffect(() => {
         const previouslyFocusedElement = document.activeElement instanceof HTMLElement
@@ -109,7 +109,7 @@ export default function RecordPaymentDialog({
         }
 
         if (method === 'tithely' && !referenceNumber.trim()) {
-            nextErrors.referenceNumber = 'Enter the Tithe.ly transaction number.';
+            nextErrors.referenceNumber = 'Enter the Tithe.ly Transaction ID.';
         }
 
         if (Object.keys(nextErrors).length > 0) {

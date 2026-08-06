@@ -170,6 +170,44 @@ describe('RegistrationViewer', () => {
         expect(await screen.findByText('Partially Paid — $25.00 of $50.00')).toBeInTheDocument();
     });
 
+    it('shows a Transaction ID duplicate error without clearing entered values', async () => {
+        const user = userEvent.setup();
+        const pendingRegistration = {
+            id: 'registration-1',
+            status: 'confirmed',
+            payment_status: 'pending',
+            payment_method: 'tithely',
+            payment_expected_amount: 50,
+            payment_recorded_total: 0,
+            registration_payments: [],
+            form_data: { name: 'Alex' },
+            signature_records: [],
+        };
+        supabase._mocks.mockOrder.mockResolvedValue({ data: [pendingRegistration], error: null });
+        supabase.rpc.mockResolvedValue({
+            data: null,
+            error: {
+                code: '23505',
+                message: 'duplicate key value violates unique constraint "registration_payments_active_tithely_reference_org_key"',
+            },
+        });
+
+        render(<RegistrationViewer orgId="org-1" eventId="event-1" event={{ ...event, payment_enabled: true }} onBack={vi.fn()} />);
+
+        await user.click(await screen.findByRole('button', { name: 'Record Payment' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Record payment' });
+        await user.selectOptions(within(dialog).getByLabelText('Payment method'), 'tithely');
+        await user.type(within(dialog).getByLabelText(/^Amount/), '25');
+        await user.type(within(dialog).getByLabelText(/^Transaction ID/), 'TX-42');
+        await user.click(within(dialog).getByRole('button', { name: 'Record payment' }));
+
+        expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+            'This Tithe.ly Transaction ID has already been recorded.',
+        );
+        expect(within(dialog).getByLabelText(/^Amount/)).toHaveValue(25);
+        expect(within(dialog).getByLabelText(/^Transaction ID/)).toHaveValue('TX-42');
+    });
+
     it('keeps Record Payment available after paid because donations are uncapped', async () => {
         supabase._mocks.mockOrder.mockResolvedValue({
             data: [{
