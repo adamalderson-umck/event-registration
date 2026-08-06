@@ -140,6 +140,26 @@ describe('FormPreview', () => {
         expect(screen.getByText(/Waiver.*section will appear here/i)).toBeInTheDocument();
     });
 
+    it('renders the payment slot only on the last page', () => {
+        const multiPageEvent = {
+            ...baseEvent,
+            form_fields: [
+                { id: 'f1', type: 'text', label: 'Name', required: true },
+                { id: 'sb1', type: 'sectionBreak', label: 'Payment' },
+                { id: 'f2', type: 'email', label: 'Email', required: true },
+            ],
+        };
+        const paymentSlot = <div>Payment method selection</div>;
+
+        const { rerender } = render(
+            <FormPreview event={multiPageEvent} currentPage={0} paymentSlot={paymentSlot} />,
+        );
+        expect(screen.queryByText('Payment method selection')).not.toBeInTheDocument();
+
+        rerender(<FormPreview event={multiPageEvent} currentPage={1} paymentSlot={paymentSlot} />);
+        expect(screen.getByText('Payment method selection')).toBeInTheDocument();
+    });
+
     it('shows empty state message when no fields are configured', () => {
         const emptyEvent = {
             ...baseEvent,

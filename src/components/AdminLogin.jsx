@@ -17,6 +17,11 @@ export default function AdminLogin() {
                 provider: 'google',
                 options: {
                     redirectTo: `${window.location.origin}/?admin=true`,
+                    // This guides Google's account chooser; Supabase enforces the domain server-side.
+                    queryParams: {
+                        hd: 'kentmethodist.org',
+                        prompt: 'select_account',
+                    },
                 },
             });
 
@@ -37,7 +42,9 @@ export default function AdminLogin() {
                 </div>
 
                 <h1 className="text-2xl font-bold text-slate-900 mb-2">Admin Portal</h1>
-                <p className="text-slate-500 mb-8">Sign in with your Google account to manage events</p>
+                <p className="text-slate-500 mb-8">
+                    Sign in with your @kentmethodist.org Google Workspace account to manage events
+                </p>
 
                 <Button
                     onClick={handleGoogleSignIn}

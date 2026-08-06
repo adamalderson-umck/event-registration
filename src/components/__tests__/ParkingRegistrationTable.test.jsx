@@ -8,7 +8,7 @@ const registration = (overrides = {}) => ({
     id: 'parking-registration-1',
     status: 'confirmed',
     payment_status: 'paid',
-    payment_method: 'paypal',
+    payment_method: 'tithely',
     form_data: {
         system_first_name: 'Alex',
         system_last_name: 'Morgan',
@@ -58,10 +58,10 @@ describe('ParkingRegistrationTable', () => {
         expect(onPrintPass).toHaveBeenCalledWith(paidRegistration);
     });
 
-    it('allows confirmed in-person pending registrations to be marked paid', () => {
+    it.each(['in_person', 'tithely'])('allows confirmed pending %s registrations to be marked paid', (payment_method) => {
         const pendingRegistration = registration({
             payment_status: 'pending',
-            payment_method: 'in_person',
+            payment_method,
         });
         const onMarkPaid = vi.fn();
 
@@ -80,5 +80,18 @@ describe('ParkingRegistrationTable', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Mark Paid' }));
 
         expect(onMarkPaid).toHaveBeenCalledWith(pendingRegistration);
+    });
+
+    it('does not offer Mark Paid for ineligible registrations', () => {
+        render(
+            <ParkingRegistrationTable
+                registrations={[registration({ payment_status: 'pending', payment_method: 'other_processor' })]}
+                onView={vi.fn()}
+                onMarkPaid={vi.fn()}
+                onPrintPass={vi.fn()}
+            />
+        );
+
+        expect(screen.queryByRole('button', { name: 'Mark Paid' })).not.toBeInTheDocument();
     });
 });

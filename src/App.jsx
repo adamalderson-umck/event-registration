@@ -12,6 +12,23 @@ const AdminLogin = lazy(() => import('./components/AdminLogin'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const CancelRegistration = lazy(() => import('./components/CancelRegistration'));
 
+async function resolveAdminAccess() {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return 'admin-login';
+  }
+
+  const { data: isAllowed, error: accessError } = await supabase.rpc('is_kentmethodist_admin');
+
+  if (accessError) {
+    console.error('Error checking admin access:', accessError);
+    return 'admin-denied';
+  }
+
+  return isAllowed ? 'admin-dashboard' : 'admin-denied';
+}
+
 function AppContent() {
   const [view, setView] = useState('loading');
   const [eventId, setEventId] = useState(null);
@@ -49,13 +66,7 @@ function AppContent() {
 
     // Admin mode — /admin path OR ?admin=true query param
     if (path === '/admin' || path.startsWith('/admin/') || params.get('admin') === 'true') {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          setView('admin-dashboard');
-        } else {
-          setView('admin-login');
-        }
-      });
+      resolveAdminAccess().then(setView);
       return;
     }
 
@@ -109,8 +120,9 @@ function AppContent() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
         const params = new URLSearchParams(window.location.search);
-        if (params.get('admin') === 'true') {
-          setView('admin-dashboard');
+        const path = window.location.pathname;
+        if (path === '/admin' || path.startsWith('/admin/') || params.get('admin') === 'true') {
+          resolveAdminAccess().then(setView);
         }
       }
     });
@@ -232,9 +244,12 @@ function AppContent() {
       case 'admin-login':
         return (
           <Suspense fallback={<LoadingFallback />}>
-            <AdminLogin onAuthenticated={() => setView('admin-dashboard')} />
+            <AdminLogin />
           </Suspense>
         );
+
+      case 'admin-denied':
+        return <AdminAccessDenied onSignOut={() => setView('admin-login')} />;
 
       case 'admin-dashboard':
         return (
@@ -273,6 +288,29 @@ function AppContent() {
   };
 
   return renderContent();
+}
+
+function AdminAccessDenied({ onSignOut }) {
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    onSignOut();
+  };
+
+  return (
+    <div className="max-w-md mx-auto py-12 text-center">
+      <h1 className="text-2xl font-bold text-slate-900 mb-2">Admin access restricted</h1>
+      <p className="text-slate-500 mb-6">
+        Sign in with a Google Workspace account ending in @kentmethodist.org.
+      </p>
+      <button
+        type="button"
+        onClick={handleSignOut}
+        className="text-primary underline cursor-pointer"
+      >
+        Sign in with a different account
+      </button>
+    </div>
+  );
 }
 
 function LoadingFallback() {

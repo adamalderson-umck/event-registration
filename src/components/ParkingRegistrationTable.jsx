@@ -6,11 +6,12 @@ import {
     getParkingPassStatus,
     getParkingVehicleLabel,
 } from '../utils/parkingRegistration';
+import { canMarkRegistrationPaid } from '../utils/paymentStatus';
 import Card from './ui/Card';
 
 const columnClassName = 'px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide';
 
-export default function ParkingRegistrationTable({ registrations, onView, onMarkPaid, onPrintPass }) {
+export default function ParkingRegistrationTable({ registrations, onView, onMarkPaid, onPrintPass, markingPaidId }) {
     return (
         <Card className="overflow-hidden">
             <div className="overflow-x-auto">
@@ -31,9 +32,7 @@ export default function ParkingRegistrationTable({ registrations, onView, onMark
                         {registrations.map((registration) => {
                             const firstName = getParkingFieldValue(registration, 'system_first_name');
                             const lastName = getParkingFieldValue(registration, 'system_last_name');
-                            const canMarkPaid = registration.status === 'confirmed'
-                                && registration.payment_status === 'pending'
-                                && registration.payment_method === 'in_person';
+                            const eligibleToMarkPaid = canMarkRegistrationPaid(registration);
 
                             return (
                                 <tr key={registration.id} className="hover:bg-slate-50 transition-colors">
@@ -67,13 +66,14 @@ export default function ParkingRegistrationTable({ registrations, onView, onMark
                                             >
                                                 View
                                             </button>
-                                            {canMarkPaid && (
+                                            {eligibleToMarkPaid && (
                                                 <button
                                                     type="button"
                                                     onClick={() => onMarkPaid(registration)}
+                                                    disabled={markingPaidId === registration.id}
                                                     className="text-primary hover:text-primary-dark font-medium cursor-pointer"
                                                 >
-                                                    Mark Paid
+                                                    {markingPaidId === registration.id ? 'Marking Paid…' : 'Mark Paid'}
                                                 </button>
                                             )}
                                             {canPrintParkingPass(registration) && (

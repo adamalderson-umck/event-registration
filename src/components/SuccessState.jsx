@@ -35,6 +35,18 @@ export default function SuccessState({ event, registration, isWaitlisted, onRese
                 A confirmation email will be sent shortly with your registration details and a cancellation link.
             </p>
 
+            {!isWaitlisted && registration?.payment_method === 'in_person' && registration?.payment_status === 'pending' && (
+                <p className="text-sm font-semibold text-slate-700 mb-6">
+                    Payment is pending. Please pay in person; an administrator will verify your payment.
+                </p>
+            )}
+
+            {!isWaitlisted && registration?.payment_method === 'tithely' && registration?.payment_status === 'pending' && (
+                <p className="text-sm font-semibold text-slate-700 mb-6">
+                    Your Tithe.ly payment is pending administrator verification.
+                </p>
+            )}
+
             {isParking && (
                 <p className="text-sm font-semibold text-slate-700 mb-6">
                     {parkingPassStatus}
