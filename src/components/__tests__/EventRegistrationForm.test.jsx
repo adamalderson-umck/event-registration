@@ -55,14 +55,10 @@ vi.mock('../WaiverEditor', () => ({
 }));
 
 vi.mock('../RegistrationPaymentStep', () => ({
-    default: ({ registration, onComplete }) => (
+    default: () => (
         <section>
-            <h2>Payment Required</h2>
-            <button
-                onClick={() => onComplete(registration)}
-            >
-                Finish Mock Tithe.ly
-            </button>
+            <h2>Complete your payment with Tithe.ly</h2>
+            <p>Registration received — payment pending</p>
         </section>
     ),
 }));
@@ -258,17 +254,16 @@ describe('EventRegistrationForm', () => {
         render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
 
         await completeRequiredFields();
-        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+        fireEvent.click(screen.getByRole('button', {
+            name: 'Submit Registration & Continue to Tithe.ly',
+        }));
 
-        expect(await screen.findByText(/payment required/i)).toBeInTheDocument();
+        expect(await screen.findByText('Registration received — payment pending')).toBeInTheDocument();
         expect(supabase._mocks.mockInvoke).toHaveBeenCalledWith('submit-registration', {
             body: expect.objectContaining({ paymentMethod: 'tithely' }),
         });
         expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
-
-        fireEvent.click(screen.getByRole('button', { name: /finish mock tithe\.ly/i }));
-        expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
-        expect(screen.getByText(/tithe\.ly payment is pending administrator verification/i)).toBeInTheDocument();
+        expect(screen.queryByText(/registration submitted/i)).not.toBeInTheDocument();
     });
 
     it('routes a confirmed parking registration through Tithe.ly and keeps it pending after local completion', async () => {
@@ -286,11 +281,11 @@ describe('EventRegistrationForm', () => {
         render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
 
         await completeRequiredFields();
-        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
-        expect(await screen.findByText(/payment required/i)).toBeInTheDocument();
-
-        fireEvent.click(screen.getByRole('button', { name: /finish mock tithe\.ly/i }));
-        expect(await screen.findByText(/tithe\.ly payment is pending administrator verification/i)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', {
+            name: 'Submit Registration & Continue to Tithe.ly',
+        }));
+        expect(await screen.findByText('Registration received — payment pending')).toBeInTheDocument();
+        expect(screen.queryByText(/registration submitted/i)).not.toBeInTheDocument();
     });
 
     it('requires an explicit method selection when Tithe.ly and Pay in Person are available', async () => {
@@ -303,14 +298,21 @@ describe('EventRegistrationForm', () => {
         render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
 
         await completeRequiredFields();
+        expect(screen.getByRole('button', { name: 'Submit Registration' })).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
 
         expect(await screen.findByRole('alert')).toHaveTextContent('Choose a payment method');
         expect(supabase._mocks.mockInvoke).not.toHaveBeenCalled();
         expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
 
+        fireEvent.click(screen.getByRole('radio', { name: /tithe\.ly/i }));
+        expect(screen.getByRole('button', {
+            name: 'Submit Registration & Continue to Tithe.ly',
+        })).toBeInTheDocument();
+
         fireEvent.click(screen.getByRole('radio', { name: /pay in person/i }));
-        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+        expect(screen.getByRole('button', { name: 'Submit Registration' })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Submit Registration' }));
         await waitFor(() => expect(supabase._mocks.mockInvoke).toHaveBeenCalledWith('submit-registration', {
             body: expect.objectContaining({ paymentMethod: 'in_person' }),
         }));
