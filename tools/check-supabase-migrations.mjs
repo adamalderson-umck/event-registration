@@ -55,9 +55,16 @@ const MARK_REGISTRATION_PAID_DECLARATION = /\bCREATE\s+OR\s+REPLACE\s+FUNCTION\s
 const DOLLAR_QUOTE = /\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$/g;
 const FUNCTION_BODY_START = /\bAS\s+(\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)/i;
 
+function isEscapeStringStart(sql, quoteIndex) {
+  const prefix = sql[quoteIndex - 1];
+  return (prefix === 'E' || prefix === 'e')
+    && (quoteIndex < 2 || !/[A-Za-z0-9_$]/.test(sql[quoteIndex - 2]));
+}
+
 function stripSqlComments(sql) {
   let result = '';
   let quote = null;
+  let escapeString = false;
 
   for (let index = 0; index < sql.length; index += 1) {
     const character = sql[index];
@@ -65,17 +72,22 @@ function stripSqlComments(sql) {
 
     if (quote) {
       result += character;
-      if (character === quote && nextCharacter === quote) {
+      if (escapeString && character === '\\' && nextCharacter !== undefined) {
+        result += nextCharacter;
+        index += 1;
+      } else if (character === quote && nextCharacter === quote) {
         result += nextCharacter;
         index += 1;
       } else if (character === quote) {
         quote = null;
+        escapeString = false;
       }
       continue;
     }
 
     if (character === "'" || character === '"') {
       quote = character;
+      escapeString = character === "'" && isEscapeStringStart(sql, index);
       result += character;
       continue;
     }
@@ -133,9 +145,12 @@ function maskOrdinaryQuotedStrings(sql, preservePaymentMethodValues = false) {
       continue;
     }
 
+    const escapeString = quote === "'" && isEscapeStringStart(sql, index);
     let stringEnd = index + 1;
     while (stringEnd < sql.length) {
-      if (sql[stringEnd] === quote && sql[stringEnd + 1] === quote) {
+      if (escapeString && sql[stringEnd] === '\\' && stringEnd + 1 < sql.length) {
+        stringEnd += 2;
+      } else if (sql[stringEnd] === quote && sql[stringEnd + 1] === quote) {
         stringEnd += 2;
       } else if (sql[stringEnd] === quote) {
         stringEnd += 1;
@@ -179,21 +194,26 @@ function maskDollarQuotedBodies(sql) {
 
 function findClosingDollarDelimiter(sql, delimiter, startIndex) {
   let quote = null;
+  let escapeString = false;
 
   for (let index = startIndex; index < sql.length; index += 1) {
     const character = sql[index];
     const nextCharacter = sql[index + 1];
     if (quote) {
-      if (character === quote && nextCharacter === quote) {
+      if (escapeString && character === '\\' && nextCharacter !== undefined) {
+        index += 1;
+      } else if (character === quote && nextCharacter === quote) {
         index += 1;
       } else if (character === quote) {
         quote = null;
+        escapeString = false;
       }
       continue;
     }
 
     if (character === "'" || character === '"') {
       quote = character;
+      escapeString = character === "'" && isEscapeStringStart(sql, index);
       continue;
     }
 
