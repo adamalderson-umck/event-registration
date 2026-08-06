@@ -1,7 +1,7 @@
 # Tithe.ly Payment Step Repair Design
 
 **Date:** 2026-08-06
-**Status:** Proposed — awaiting written-spec review
+**Status:** Approved
 
 ## Purpose
 
