@@ -51,6 +51,9 @@ const TITHELY_FILENAME = /_tithely_payment_flow\.sql$/;
 const SECURITY_INVOKER = /\bSECURITY\s+INVOKER\b/i;
 const ORGANIZATION_MEMBERSHIP_CHECK = /\bprivate\s*\.\s*is_org_member\s*\(\s*p_org_id\s*\)/i;
 const SUPPORTED_PAYMENT_METHODS = /\bpayment_method\s+IN\s*\(\s*'tithely'\s*,\s*'in_person'\s*\)/i;
+const MARK_REGISTRATION_PAID_DECLARATION = /\bCREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\s*\.\s*mark_registration_paid\s*\(/i;
+const DOLLAR_QUOTE = /\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$/g;
+const FUNCTION_BODY_START = /\bAS\s+(\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)/i;
 
 function stripSqlComments(sql) {
   let result = '';
@@ -120,6 +123,88 @@ function hasPaymentMethodAssignment(sql) {
   return sql.split(';').some((statement) => /\bSET\b[\s\S]*?\bpayment_method\s*=/i.test(statement));
 }
 
+function maskOrdinaryQuotedStrings(sql, preservePaymentMethodValues = false) {
+  let result = '';
+
+  for (let index = 0; index < sql.length; index += 1) {
+    const quote = sql[index];
+    if (quote !== "'" && quote !== '"') {
+      result += quote;
+      continue;
+    }
+
+    let stringEnd = index + 1;
+    while (stringEnd < sql.length) {
+      if (sql[stringEnd] === quote && sql[stringEnd + 1] === quote) {
+        stringEnd += 2;
+      } else if (sql[stringEnd] === quote) {
+        stringEnd += 1;
+        break;
+      } else {
+        stringEnd += 1;
+      }
+    }
+
+    const literal = sql.slice(index, stringEnd);
+    const preserveLiteral = preservePaymentMethodValues
+      && quote === "'"
+      && (literal.toLowerCase() === "'tithely'" || literal.toLowerCase() === "'in_person'");
+    result += preserveLiteral ? literal : literal.replace(/[^\r\n]/g, ' ');
+    index = stringEnd - 1;
+  }
+
+  return result;
+}
+
+function maskDollarQuotedBodies(sql) {
+  const result = sql.split('');
+  DOLLAR_QUOTE.lastIndex = 0;
+  let match;
+  while ((match = DOLLAR_QUOTE.exec(sql))) {
+    const delimiter = match[0];
+    const bodyStart = match.index + delimiter.length;
+    const bodyEnd = sql.indexOf(delimiter, bodyStart);
+    if (bodyEnd === -1) {
+      break;
+    }
+    for (let index = bodyStart; index < bodyEnd; index += 1) {
+      if (result[index] !== '\r' && result[index] !== '\n') {
+        result[index] = ' ';
+      }
+    }
+    DOLLAR_QUOTE.lastIndex = bodyEnd + delimiter.length;
+  }
+  return result.join('');
+}
+
+function extractMarkRegistrationPaidDefinition(sql) {
+  const commentlessSql = stripSqlComments(sql);
+  const declarationSearch = maskDollarQuotedBodies(maskOrdinaryQuotedStrings(commentlessSql));
+  const declarationMatch = MARK_REGISTRATION_PAID_DECLARATION.exec(declarationSearch);
+  if (!declarationMatch) {
+    return null;
+  }
+
+  const declarationStart = declarationMatch.index;
+  const bodyStartMatch = FUNCTION_BODY_START.exec(declarationSearch.slice(declarationStart));
+  if (!bodyStartMatch) {
+    return null;
+  }
+
+  const delimiter = bodyStartMatch[1];
+  const delimiterStart = declarationStart + bodyStartMatch.index + bodyStartMatch[0].lastIndexOf(delimiter);
+  const bodyStart = delimiterStart + delimiter.length;
+  const bodyEnd = commentlessSql.indexOf(delimiter, bodyStart);
+  if (bodyEnd === -1) {
+    return null;
+  }
+
+  return {
+    declaration: commentlessSql.slice(declarationStart, delimiterStart),
+    body: commentlessSql.slice(bodyStart, bodyEnd),
+  };
+}
+
 export function validateMigrationDirectory(migrationsDirectory, options = {}) {
   const expectedAppliedMigrations = options.expectedAppliedMigrations ?? EXPECTED_APPLIED_MIGRATIONS;
   const latestAppliedVersion = options.latestAppliedVersion ?? LATEST_APPLIED_VERSION;
@@ -166,17 +251,27 @@ export function validateMigrationDirectory(migrationsDirectory, options = {}) {
     }
 
     if (TITHELY_FILENAME.test(filename)) {
-      const executableSql = stripSqlComments(sql);
-      if (!SECURITY_INVOKER.test(executableSql)) {
+      const functionDefinition = extractMarkRegistrationPaidDefinition(sql);
+      if (!functionDefinition) {
+        errors.push(`${filename}: Tithe.ly payment flow must define CREATE OR REPLACE FUNCTION public.mark_registration_paid(...)`);
+        errors.push(`${filename}: Tithe.ly payment flow must use SECURITY INVOKER`);
+        errors.push(`${filename}: Tithe.ly payment flow must call private.is_org_member(p_org_id)`);
+        errors.push(`${filename}: Tithe.ly payment flow must support payment_method IN ('tithely', 'in_person')`);
+        continue;
+      }
+
+      const declaration = maskOrdinaryQuotedStrings(functionDefinition.declaration);
+      const body = maskOrdinaryQuotedStrings(functionDefinition.body, true);
+      if (!SECURITY_INVOKER.test(declaration)) {
         errors.push(`${filename}: Tithe.ly payment flow must use SECURITY INVOKER`);
       }
-      if (!ORGANIZATION_MEMBERSHIP_CHECK.test(executableSql)) {
+      if (!ORGANIZATION_MEMBERSHIP_CHECK.test(body)) {
         errors.push(`${filename}: Tithe.ly payment flow must call private.is_org_member(p_org_id)`);
       }
-      if (!SUPPORTED_PAYMENT_METHODS.test(executableSql)) {
+      if (!SUPPORTED_PAYMENT_METHODS.test(body)) {
         errors.push(`${filename}: Tithe.ly payment flow must support payment_method IN ('tithely', 'in_person')`);
       }
-      if (hasPaymentMethodAssignment(executableSql)) {
+      if (hasPaymentMethodAssignment(body)) {
         errors.push(`${filename}: Tithe.ly payment flow must not assign payment_method in a SET clause`);
       }
     }

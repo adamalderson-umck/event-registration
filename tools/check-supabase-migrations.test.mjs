@@ -32,7 +32,7 @@ describe('validateMigrationDirectory', () => {
     writeMigration(
       directory,
       '20260101000001_tithely_payment_flow.sql',
-      `CREATE FUNCTION public.example(p_org_id uuid) RETURNS void
+      `CREATE OR REPLACE FUNCTION public.mark_registration_paid(p_org_id uuid) RETURNS void
         LANGUAGE plpgsql SECURITY INVOKER AS $$
         BEGIN
           PERFORM private.is_org_member(p_org_id);
@@ -91,7 +91,7 @@ describe('validateMigrationDirectory', () => {
     writeMigration(
       directory,
       '20260102000000_tithely_payment_flow.sql',
-      `CREATE FUNCTION public.example(p_org_id uuid) RETURNS void
+      `CREATE OR REPLACE FUNCTION public.mark_registration_paid(p_org_id uuid) RETURNS void
         LANGUAGE plpgsql SECURITY DEFINER AS $$
         BEGIN
           UPDATE public.registrations SET payment_method = 'tithely';
@@ -117,7 +117,7 @@ describe('validateMigrationDirectory', () => {
       '20260102000000_tithely_payment_flow.sql',
       `/* SECURITY INVOKER private.is_org_member(p_org_id)
           payment_method IN ('tithely', 'in_person') */
-        CREATE FUNCTION public.example(p_org_id uuid) RETURNS void
+        CREATE OR REPLACE FUNCTION public.mark_registration_paid(p_org_id uuid) RETURNS void
         LANGUAGE plpgsql SECURITY DEFINER AS $$
         BEGIN
           -- SECURITY INVOKER private.is_org_member(p_org_id)
@@ -145,7 +145,7 @@ describe('validateMigrationDirectory', () => {
       `/* outer comment /* inner comment */ SECURITY INVOKER
           private.is_org_member(p_org_id)
           payment_method IN ('tithely', 'in_person') */
-        CREATE FUNCTION public.example(p_org_id uuid) RETURNS void
+        CREATE OR REPLACE FUNCTION public.mark_registration_paid(p_org_id uuid) RETURNS void
         LANGUAGE plpgsql SECURITY DEFINER AS $$
         BEGIN
           NULL;
@@ -168,12 +168,88 @@ describe('validateMigrationDirectory', () => {
     writeMigration(
       directory,
       '20260102000000_tithely_payment_flow.sql',
-      `CREATE FUNCTION public.example(p_org_id uuid) RETURNS void
+      `CREATE OR REPLACE FUNCTION public.mark_registration_paid(p_org_id uuid) RETURNS void
         LANGUAGE plpgsql SECURITY INVOKER AS $$
         BEGIN
           PERFORM private.is_org_member(p_org_id);
           IF payment_method IN ('tithely', 'in_person') THEN NULL; END IF;
           -- SET payment_method = 'tithely'
+        END;
+        $$;`,
+    );
+
+    const { errors } = validateMigrationDirectory(directory, {
+      expectedAppliedMigrations: [],
+      latestAppliedVersion: '20260101000000',
+    });
+
+    expect(errors).toEqual([]);
+  });
+
+  it('does not accept security markers embedded in a quoted literal in mark_registration_paid', () => {
+    const directory = createMigrationsDirectory();
+    writeMigration(
+      directory,
+      '20260102000000_tithely_payment_flow.sql',
+      `CREATE OR REPLACE FUNCTION public.mark_registration_paid(p_org_id uuid) RETURNS void
+        LANGUAGE plpgsql SECURITY DEFINER AS $$
+        BEGIN
+          PERFORM 'SECURITY INVOKER private.is_org_member(p_org_id) payment_method IN (''tithely'', ''in_person'')';
+        END;
+        $$;`,
+    );
+
+    const { errors } = validateMigrationDirectory(directory, {
+      expectedAppliedMigrations: [],
+      latestAppliedVersion: '20260101000000',
+    });
+
+    expect(errors.join('\n')).toMatch(/SECURITY INVOKER/i);
+    expect(errors.join('\n')).toMatch(/private\.is_org_member\(p_org_id\)/i);
+    expect(errors.join('\n')).toMatch(/payment_method IN \('tithely', 'in_person'\)/i);
+  });
+
+  it('does not accept markers from an unrelated function', () => {
+    const directory = createMigrationsDirectory();
+    writeMigration(
+      directory,
+      '20260102000000_tithely_payment_flow.sql',
+      `CREATE OR REPLACE FUNCTION public.other_function(p_org_id uuid) RETURNS void
+        LANGUAGE plpgsql SECURITY INVOKER AS $$
+        BEGIN
+          PERFORM private.is_org_member(p_org_id);
+          IF payment_method IN ('tithely', 'in_person') THEN NULL; END IF;
+        END;
+        $$;
+        CREATE OR REPLACE FUNCTION public.mark_registration_paid(p_org_id uuid) RETURNS void
+        LANGUAGE plpgsql SECURITY DEFINER AS $$
+        BEGIN
+          NULL;
+        END;
+        $$;`,
+    );
+
+    const { errors } = validateMigrationDirectory(directory, {
+      expectedAppliedMigrations: [],
+      latestAppliedVersion: '20260101000000',
+    });
+
+    expect(errors.join('\n')).toMatch(/SECURITY INVOKER/i);
+    expect(errors.join('\n')).toMatch(/private\.is_org_member\(p_org_id\)/i);
+    expect(errors.join('\n')).toMatch(/payment_method IN \('tithely', 'in_person'\)/i);
+  });
+
+  it('ignores quoted SET payment_method text in a secure mark_registration_paid body', () => {
+    const directory = createMigrationsDirectory();
+    writeMigration(
+      directory,
+      '20260102000000_tithely_payment_flow.sql',
+      `CREATE OR REPLACE FUNCTION public.mark_registration_paid(p_org_id uuid) RETURNS void
+        LANGUAGE plpgsql SECURITY INVOKER AS $$
+        BEGIN
+          PERFORM private.is_org_member(p_org_id);
+          IF payment_method IN ('tithely', 'in_person') THEN NULL; END IF;
+          PERFORM 'SET payment_method = ''x''';
         END;
         $$;`,
     );
