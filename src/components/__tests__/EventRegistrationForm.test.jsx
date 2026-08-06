@@ -9,7 +9,7 @@
  * inside the factory and retrieved via vi.mocked() or module import.
  */
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
@@ -115,22 +115,25 @@ function setupMocks(eventData = makeEvent(), insertError = null) {
     const mockSelect = vi.fn(() => ({ eq: mockEq1 }));
     mockFrom.mockReturnValue({ select: mockSelect, insert: mockInsert });
     mockSingle.mockResolvedValue({ data: eventData, error: null });
-    mockInsertSingle.mockResolvedValue({
-        data: {
+    mockInsertSingle.mockResolvedValue({ data: null, error: null });
+    mockInvoke.mockResolvedValue({
+        data: insertError ? null : {
             id: 'registration-1',
             status: 'confirmed',
-            payment_status: 'pending',
+            payment_status: 'not_required',
             payment_method: null,
         },
         error: insertError,
     });
-    mockInvoke.mockResolvedValue({ data: { ip: '127.0.0.1' }, error: null });
 }
 
 async function completeRequiredFields({ firstName = 'John', lastName = 'Doe', email = 'john@example.com' } = {}) {
     await userEvent.type(await screen.findByLabelText(/first name/i), firstName);
     await userEvent.type(screen.getByLabelText(/last name/i), lastName);
     await userEvent.type(screen.getByLabelText(/email/i), email);
+    await waitFor(() => {
+        expect(screen.getByRole('button', { name: /submit registration/i })).toBeEnabled();
+    });
 }
 
 function deferred() {
@@ -145,7 +148,19 @@ function deferred() {
 describe('EventRegistrationForm', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.stubEnv('VITE_TURNSTILE_SITE_KEY', ''); // Disable CAPTCHA for JSDOM
+        vi.stubEnv('VITE_TURNSTILE_SITE_KEY', 'test-site-key');
+        window.turnstile = {
+            render: vi.fn((_element, options) => {
+                options.callback('verified-token');
+                return 'widget-1';
+            }),
+            reset: vi.fn(),
+        };
+    });
+
+    afterEach(() => {
+        delete window.turnstile;
+        document.getElementById('cf-turnstile-script')?.remove();
     });
 
     it('renders form fields after loading event', async () => {
@@ -156,14 +171,35 @@ describe('EventRegistrationForm', () => {
         expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
     });
 
+    it('renders Turnstile after event data makes the final-page container available', async () => {
+        vi.stubEnv('VITE_TURNSTILE_SITE_KEY', 'test-site-key');
+        const renderTurnstile = vi.fn(() => 'widget-1');
+        window.turnstile = { render: renderTurnstile, reset: vi.fn() };
+        setupMocks();
+
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        expect(await screen.findByLabelText(/first name/i)).toBeInTheDocument();
+        await waitFor(() => {
+            expect(renderTurnstile).toHaveBeenCalledWith(
+                expect.any(HTMLElement),
+                expect.objectContaining({ sitekey: 'test-site-key', action: 'event_registration' })
+            );
+        });
+    });
+
     it('shows validation errors when submitting empty form', async () => {
         setupMocks();
         render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
         await screen.findByLabelText(/first name/i);
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /submit registration/i })).toBeEnabled();
+        });
 
         fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
 
         expect(await screen.findAllByText(/this field is required/i)).toHaveLength(3);
+        expect(supabase._mocks.mockInvoke).not.toHaveBeenCalled();
         expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
     });
 
@@ -176,6 +212,7 @@ describe('EventRegistrationForm', () => {
         fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
 
         expect(await screen.findByText(/valid email/i)).toBeInTheDocument();
+        expect(supabase._mocks.mockInvoke).not.toHaveBeenCalled();
         expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
     });
 
@@ -188,14 +225,20 @@ describe('EventRegistrationForm', () => {
         fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
 
         await waitFor(() => {
-            expect(supabase._mocks.mockInsert).toHaveBeenCalledWith(expect.objectContaining({
-                event_id: 'evt-1',
-                org_id: 'org-1',
-                form_data: expect.objectContaining({
-                    system_email: 'john@example.com',
+            expect(supabase._mocks.mockInvoke).toHaveBeenCalledWith('submit-registration', {
+                body: expect.objectContaining({
+                    turnstileToken: 'verified-token',
+                    eventId: 'evt-1',
+                    orgId: 'org-1',
+                    formData: expect.objectContaining({
+                        system_email: 'john@example.com',
+                    }),
+                    paymentMethod: null,
+                    signatureRecords: [],
                 }),
-            }));
+            });
         });
+        expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
 
         // SuccessState renders after submit
         expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
@@ -208,7 +251,7 @@ describe('EventRegistrationForm', () => {
             tithely_giving_url: `https://give.tithe.ly/?formId=${TITHELY_FORM_ID}`,
             tithely_embed_config: { formId: TITHELY_FORM_ID },
         }));
-        supabase._mocks.mockInsertSingle.mockResolvedValue({
+        supabase._mocks.mockInvoke.mockResolvedValue({
             data: { id: 'registration-1', status: 'confirmed', payment_status: 'pending', payment_method: 'tithely' },
             error: null,
         });
@@ -218,8 +261,10 @@ describe('EventRegistrationForm', () => {
         fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
 
         expect(await screen.findByText(/payment required/i)).toBeInTheDocument();
-        expect(supabase._mocks.mockInsertSingle).toHaveBeenCalledTimes(1);
-        expect(supabase._mocks.mockInsert).toHaveBeenCalledWith(expect.objectContaining({ payment_method: 'tithely' }));
+        expect(supabase._mocks.mockInvoke).toHaveBeenCalledWith('submit-registration', {
+            body: expect.objectContaining({ paymentMethod: 'tithely' }),
+        });
+        expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole('button', { name: /finish mock tithe\.ly/i }));
         expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
@@ -234,7 +279,7 @@ describe('EventRegistrationForm', () => {
             tithely_giving_url: `https://give.tithe.ly/?formId=${TITHELY_FORM_ID}`,
             tithely_embed_config: { formId: TITHELY_FORM_ID },
         }));
-        supabase._mocks.mockInsertSingle.mockResolvedValue({
+        supabase._mocks.mockInvoke.mockResolvedValue({
             data: { id: 'registration-1', status: 'confirmed', payment_status: 'pending', payment_method: 'tithely' },
             error: null,
         });
@@ -261,11 +306,15 @@ describe('EventRegistrationForm', () => {
         fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
 
         expect(await screen.findByRole('alert')).toHaveTextContent('Choose a payment method');
+        expect(supabase._mocks.mockInvoke).not.toHaveBeenCalled();
         expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole('radio', { name: /pay in person/i }));
         fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
-        await waitFor(() => expect(supabase._mocks.mockInsert).toHaveBeenCalledWith(expect.objectContaining({ payment_method: 'in_person' })));
+        await waitFor(() => expect(supabase._mocks.mockInvoke).toHaveBeenCalledWith('submit-registration', {
+            body: expect.objectContaining({ paymentMethod: 'in_person' }),
+        }));
+        expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
     });
 
     it('blocks a payment-enabled event with no viable payment method before inserting', async () => {
@@ -276,12 +325,13 @@ describe('EventRegistrationForm', () => {
         fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
 
         expect(await screen.findByText('No usable payment method is configured for this event.')).toBeInTheDocument();
+        expect(supabase._mocks.mockInvoke).not.toHaveBeenCalled();
         expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
     });
 
     it('submits an in-person-only payment as pending without the Tithe.ly handoff', async () => {
         setupMocks(makeEvent({ payment_enabled: true, allow_in_person_payment: true }));
-        supabase._mocks.mockInsertSingle.mockResolvedValue({
+        supabase._mocks.mockInvoke.mockResolvedValue({
             data: { id: 'registration-1', status: 'confirmed', payment_status: 'pending', payment_method: 'in_person' },
             error: null,
         });
@@ -293,7 +343,10 @@ describe('EventRegistrationForm', () => {
         expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
         expect(screen.queryByText(/payment required/i)).not.toBeInTheDocument();
         expect(screen.getByText(/payment is pending.*pay in person/i)).toBeInTheDocument();
-        expect(supabase._mocks.mockInsert).toHaveBeenCalledWith(expect.objectContaining({ payment_method: 'in_person' }));
+        expect(supabase._mocks.mockInvoke).toHaveBeenCalledWith('submit-registration', {
+            body: expect.objectContaining({ paymentMethod: 'in_person' }),
+        });
+        expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
     });
 
     it('uses the returned waitlist status and skips Tithe.ly payment despite stale capacity counters', async () => {
@@ -307,7 +360,7 @@ describe('EventRegistrationForm', () => {
             registration_count: 1,
             waitlist_enabled: true,
         }));
-        supabase._mocks.mockInsertSingle.mockResolvedValue({
+        supabase._mocks.mockInvoke.mockResolvedValue({
             data: {
                 id: 'registration-1',
                 status: 'waitlisted',
@@ -332,7 +385,7 @@ describe('EventRegistrationForm', () => {
             payment_amount: 100,
             allow_in_person_payment: true,
         }));
-        supabase._mocks.mockInsertSingle.mockResolvedValue({
+        supabase._mocks.mockInvoke.mockResolvedValue({
             data: {
                 id: 'registration-1',
                 status: 'pending',
@@ -363,6 +416,8 @@ describe('EventRegistrationForm', () => {
         // Multiple elements possible (aria-live region + visible error) — at least one must match
         const errors = await screen.findAllByText(/failed to submit/i);
         expect(errors.length).toBeGreaterThan(0);
+        expect(window.turnstile.reset).toHaveBeenCalledWith('widget-1');
+        expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
     });
 
     it('shows "event not found" when event fetch returns error', async () => {
@@ -451,12 +506,14 @@ describe('EventRegistrationForm', () => {
         fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
 
         await waitFor(() => {
-            const call = supabase._mocks.mockInsert.mock.calls[0]?.[0];
-            expect(call).toBeDefined();
-            expect(Array.isArray(call.signature_records)).toBe(true);
-            expect(call.signature_records).toHaveLength(2);
-            const rec2 = call.signature_records.find((r) => r.waiverId === 'w2');
+            const call = supabase._mocks.mockInvoke.mock.calls[0];
+            expect(call?.[0]).toBe('submit-registration');
+            const records = call?.[1]?.body?.signatureRecords;
+            expect(Array.isArray(records)).toBe(true);
+            expect(records).toHaveLength(2);
+            const rec2 = records.find((r) => r.waiverId === 'w2');
             expect(rec2?.declined).toBe(true);
         });
+        expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
     });
 });
