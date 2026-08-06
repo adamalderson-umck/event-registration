@@ -15,7 +15,7 @@ All nine applied repository migrations have version IDs that differ from the liv
 
 The repository is missing the first 27 live migrations and does not contain `supabase/config.toml`. The Supabase CLI is not currently installed as a project dependency.
 
-The repository's `20260805200000_tithely_payment_flow.sql` migration is not recorded in the live ledger, and its Tithe.ly columns are not present in the live schema. It is a legitimate pending migration rather than an already-applied migration that needs repair. Its current timestamp precedes three later live admin-security migrations, so it must receive a new CLI-generated version after the latest applied live version.
+The repository's `20260805200000_tithely_payment_flow.sql` migration is not recorded in the live ledger, and its Tithe.ly columns are not present in the live schema. It is a legitimate pending migration rather than an already-applied migration that needs repair. Its current timestamp precedes three later live admin-security migrations, so it must receive a new CLI-generated version after the latest applied live version. Moving the original SQL after those migrations without modification would recreate `mark_registration_paid` as `SECURITY DEFINER` and bypass the newer domain-aware authorization path, so the pending migration must integrate the later security contract.
 
 One recorded historical migration, `20260323183121_create_email_webhook_triggers`, contains the live project URL and an anon-key JWT in calls that initialize Vault. Those environment-specific values must not be copied into Git.
 
@@ -26,7 +26,7 @@ One recorded historical migration, `20260323183121_create_email_webhook_triggers
 - Reconstruct all 36 applied live migrations under their live version IDs and names.
 - Preserve the recorded SQL for each applied migration except for the credential sanitization described below.
 - Replace the nine mismatched applied migration files with canonically named files.
-- Generate a new version for the pending Tithe.ly migration after the latest applied live version.
+- Generate a new version for the pending Tithe.ly migration after the latest applied live version and make its payment-verification RPC compatible with the later admin-security migrations.
 - Add a project-local, pinned Supabase CLI dependency and commit its lockfile changes.
 - Generate and commit `supabase/config.toml` through the Supabase CLI.
 - Add an automated repository check for migration filename and credential safety.
@@ -54,7 +54,17 @@ The file body will use the corresponding SQL recorded in the ledger. Version ide
 
 The existing mismatched files will be removed after their canonical replacements are present. The multi-waiver replacement will contain the recorded migration body without the old dashboard instructions and verification `SELECT` statements.
 
-The pending Tithe.ly migration will be recreated with `supabase migration new tithely_payment_flow`. Its SQL behavior will remain unchanged. Its new timestamp must sort after live version `20260806001553`, ensuring that a linked dry run recognizes it as the single next migration rather than an out-of-order historical migration.
+The pending Tithe.ly migration will be recreated with `supabase migration new tithely_payment_flow`. Its new timestamp must sort after live version `20260806001553`, ensuring that a linked dry run recognizes it as the single next migration rather than an out-of-order historical migration.
+
+Its event-column changes and payment behavior will remain intact, but its `mark_registration_paid` definition will incorporate the newer security contract:
+
+- run as `SECURITY INVOKER`;
+- authorize through `private.is_org_member(p_org_id)`;
+- accept confirmed, pending registrations whose selected method is `tithely` or `in_person`;
+- preserve the selected payment method while recording verification metadata; and
+- remain unavailable to anonymous callers and executable by `authenticated` and `service_role`.
+
+This is an intentional change from the unshipped migration body. It prevents the newly ordered migration from undoing live version `20260806001318_harden_remaining_admin_functions` when Tithe.ly is eventually applied.
 
 ## Credential-Bearing Historical Migration
 
@@ -135,13 +145,15 @@ Verification will run in this order:
 3. Confirm that the local migration list contains all 36 canonical applied versions plus the pending Tithe.ly version.
 4. Run `supabase migration list --linked` against the Event Registration project and confirm that all 36 applied version IDs align. Tithe.ly must appear local-only.
 5. Run `supabase db push --dry-run` against the linked project. It may propose only the pending Tithe.ly migration and must not propose replaying an already-applied migration.
-6. Run the existing application test suite, lint, and production build serially.
-7. Review the final Git diff and confirm that it contains no application behavior change, credential, production mutation, or unrelated edit.
+6. Inspect the pending Tithe.ly migration and confirm that `mark_registration_paid` is `SECURITY INVOKER`, calls `private.is_org_member`, supports `tithely` and `in_person`, and does not rewrite `payment_method`.
+7. Run the existing application test suite, lint, and production build serially.
+8. Review the final Git diff and confirm that it contains no application behavior change, credential, production mutation, or unrelated edit.
 
 ## Acceptance Criteria
 
 - Git contains all 36 applied live migration versions under canonical filenames.
 - The pending Tithe.ly migration sorts after all applied migrations and remains unapplied.
+- The pending Tithe.ly payment-verification RPC preserves both Tithe.ly behavior and the later invoker-rights, domain-aware authorization contract.
 - No tracked file contains a live project URL, JWT-shaped key, Supabase secret key, or service-role key.
 - A clean local Supabase environment successfully replays the committed migration chain.
 - Linked migration listing intentionally aligns all applied local and remote versions.
