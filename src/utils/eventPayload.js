@@ -1,10 +1,14 @@
 import { validateParkingEventDraft } from '../config/eventPresets';
+import { validateEventEmailDraft } from '../config/eventEmailMessages';
 import { sha256 } from './hashContent';
 import { normalizeTithelyConfiguration } from './tithelyEmbed';
 
 export async function buildEventPayload(event, orgId) {
     if (event.status === 'active') {
-        const validationError = validateParkingEventDraft(event)[0];
+        const validationError = [
+            ...validateParkingEventDraft(event),
+            ...validateEventEmailDraft(event),
+        ][0];
         if (validationError) throw new Error(validationError);
     }
 
@@ -44,6 +48,8 @@ export async function buildEventPayload(event, orgId) {
             digestDay: event.notifications.digestDay,
         },
         reminder_hours_before: event.reminderHoursBefore ? parseInt(event.reminderHoursBefore, 10) : null,
+        confirmation_message: event.confirmationMessage?.trim() || null,
+        reminder_message: event.reminderMessage?.trim() || null,
         waivers: await Promise.all(
             event.waivers.map(async (waiver, index) => ({
                 ...waiver,

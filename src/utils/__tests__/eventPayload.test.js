@@ -36,6 +36,8 @@ const createParkingDraft = () => {
         tithelyEmbedCode: TITHELY_EMBED_CODE,
         tithelyEmbedConfig: null,
         eventType: 'parking',
+        confirmationMessage: preset.confirmationMessage,
+        reminderMessage: '',
         formFields: preset.formFields,
         waivers: preset.waivers,
         notifications: {
@@ -63,6 +65,8 @@ describe('event payloads', () => {
             payment_amount: 100,
             tithely_giving_url: TITHELY_GIVING_URL,
             tithely_embed_config: TITHELY_EMBED_CONFIG,
+            confirmation_message: 'Thank you for registering for this parking event.',
+            reminder_message: null,
             org_id: 'org-1',
         });
         expect(payload).not.toHaveProperty('tithely_embed_code');
@@ -78,6 +82,25 @@ describe('event payloads', () => {
 
         await expect(buildEventPayload(event, 'org-1')).rejects.toThrow(
             'Parking events require payment with a positive amount.'
+        );
+    });
+
+    it('rejects active events with missing required email messages', async () => {
+        await expect(buildEventPayload({
+            ...createParkingDraft(),
+            confirmationMessage: '   ',
+        }, 'org-1')).rejects.toThrow(
+            'Active parking events require a confirmation email message.'
+        );
+
+        await expect(buildEventPayload({
+            ...createParkingDraft(),
+            eventType: 'standard',
+            confirmationMessage: '',
+            reminderHoursBefore: '24',
+            reminderMessage: '',
+        }, 'org-1')).rejects.toThrow(
+            'Active events with a reminder time require a reminder email message.'
         );
     });
 
@@ -169,6 +192,8 @@ describe('event payloads', () => {
             registration_count: 10,
             waitlist_count: 2,
             reminder_sent_at: '2026-08-01T00:00:00Z',
+            confirmation_message: 'Pickup at the church office.',
+            reminder_message: 'Bring photo identification.',
         };
 
         const payload = buildDuplicateEventPayload(source);
@@ -184,6 +209,8 @@ describe('event payloads', () => {
             allow_in_person_payment: true,
             tithely_giving_url: TITHELY_GIVING_URL,
             tithely_embed_config: TITHELY_EMBED_CONFIG,
+            confirmation_message: 'Pickup at the church office.',
+            reminder_message: 'Bring photo identification.',
         });
         expect(payload).not.toHaveProperty('id');
     });
