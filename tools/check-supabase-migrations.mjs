@@ -88,13 +88,25 @@ function stripSqlComments(sql) {
     }
 
     if (character === '/' && nextCharacter === '*') {
-      const commentEnd = sql.indexOf('*/', index + 2);
-      const comment = sql.slice(index, commentEnd === -1 ? sql.length : commentEnd + 2);
+      let depth = 1;
+      let commentEnd = index + 2;
+      while (commentEnd < sql.length && depth > 0) {
+        if (sql[commentEnd] === '/' && sql[commentEnd + 1] === '*') {
+          depth += 1;
+          commentEnd += 2;
+        } else if (sql[commentEnd] === '*' && sql[commentEnd + 1] === '/') {
+          depth -= 1;
+          commentEnd += 2;
+        } else {
+          commentEnd += 1;
+        }
+      }
+      const comment = sql.slice(index, commentEnd);
       result += comment.replace(/[^\r\n]/g, ' ');
-      if (commentEnd === -1) {
+      if (depth > 0) {
         break;
       }
-      index = commentEnd + 1;
+      index = commentEnd - 1;
       continue;
     }
 
