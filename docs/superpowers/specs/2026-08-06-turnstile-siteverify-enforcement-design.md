@@ -53,13 +53,20 @@ The function returns only the fields the existing success and payment flows requ
 
 `submit-registration` is a public function with `verify_jwt = false` because registration does not require a signed-in Supabase user. Public reachability is not authorization: every `POST` request must pass Siteverify before any database write.
 
-The function accepts JSON bodies up to 1 MiB and Turnstile tokens up to Cloudflare's 2,048-character limit. It requires object-shaped form data and an array of signature records; it rejects unexpected top-level fields rather than silently treating them as authoritative.
+The function accepts only `application/json` `POST` bodies up to 1 MiB and Turnstile tokens up to Cloudflare's 2,048-character limit. It rejects unexpected top-level fields rather than silently treating them as authoritative.
+
+All nested registration data is untrusted. After loading the event, the function builds a new database payload from an allowlist derived from the current event definition:
+
+- `form_data` may contain only field IDs present in the event's active form pages, with values validated and bounded according to each field type;
+- `signature_records` may contain at most one decision for each waiver attached to the event, with duplicate and unknown waiver IDs rejected;
+- waiver titles, content hashes, required/optional status, timestamps, request IP, and user-agent metadata are copied or derived server-side rather than accepted as authoritative browser values; and
+- strings, arrays, drawn-signature data, and the total nested payload are bounded so a valid Turnstile token cannot be used to store arbitrary or unbounded JSON.
 
 The function:
 
-1. accepts `OPTIONS` for browser CORS and rejects non-`POST` methods;
-2. parses and bounds the request shape and Turnstile token length;
-3. calls `https://challenges.cloudflare.com/turnstile/v0/siteverify` with `TURNSTILE_SECRET`, the token, and the request IP when available;
+1. accepts `OPTIONS` for browser CORS, returns `Vary: Origin`, and rejects non-`POST` methods, unsupported content types, and browser origins outside the explicit production/development allowlist;
+2. parses and bounds the top-level and nested request shape and Turnstile token length;
+3. calls the fixed URL `https://challenges.cloudflare.com/turnstile/v0/siteverify` with `TURNSTILE_SECRET`, the token, and only a trusted platform-derived request IP when available; the client cannot choose the outbound host or supply the authoritative IP;
 4. fails closed unless the response satisfies the full security invariant;
 5. loads the event with the server-side Supabase client and rechecks organization, active status, and registration closing time;
 6. derives registration and payment status from the event configuration rather than trusting the browser;
@@ -73,7 +80,7 @@ The function uses these server-side environment values:
 - `TURNSTILE_HOSTNAMES=events.kentmethodist.org,event-registration-b7840.web.app`; and
 - `TURNSTILE_ACTION=event_registration`.
 
-Secrets are stored in Supabase Edge Function secrets and never committed or returned to the browser.
+Secrets are stored in Supabase Edge Function secrets and never committed, logged, included in `VITE_*` variables, or returned to the browser. The Siteverify request has a bounded timeout and any timeout, malformed provider response, non-success response, or provider error fails closed.
 
 ### Database
 
@@ -92,7 +99,7 @@ The service role remains able to insert through the Edge Function. No public `SE
 - Missing or failed Turnstile verification, Siteverify outage, hostname mismatch, or action mismatch: `403` with `security_verification_failed`.
 - Database or unexpected server failure: `500` with a generic submission-failed response.
 
-Detailed Siteverify and database errors are logged server-side but are not exposed to callers. After any failed submission, the browser resets the widget to obtain a fresh token and displays an actionable retry message. CORS permits the public browser invocation but is not treated as an authorization control; Siteverify and removal of browser database writes enforce the boundary.
+Server logs record a generated request correlation ID, stable internal error code, and non-sensitive operational metadata. They never record the Turnstile secret or response token, raw form data, signatures, waiver contents, authorization headers, or raw provider/database errors that may contain sensitive values. Callers receive only the correlation ID and generic stable error contract. After any failed submission, the browser resets the widget to obtain a fresh token and displays an actionable retry message. CORS permits the public browser invocation but is not treated as an authorization control; Siteverify and removal of browser database writes enforce the boundary.
 
 ## Alternatives Rejected
 
@@ -114,6 +121,7 @@ Implementation follows test-first development. Required proof includes:
 
 - a failing then passing frontend test showing submission invokes `submit-registration` with the token and no longer calls direct table insert;
 - Edge Function unit tests for valid verification, missing token, Siteverify rejection, network failure, hostname mismatch, action mismatch, expired or reused token response, invalid event, and invalid payment method;
+- Edge Function unit tests for unsupported content type, oversized bodies/tokens/nested values, unknown form fields, unknown or duplicate waiver IDs, client-supplied metadata, and sensitive-data-free logging;
 - a migration assertion proving browser roles have neither an insert policy nor `INSERT` privilege;
 - the complete application test suite, lint, migration validation, and production build;
 - a production invalid-token request that returns `403` without inserting; and
@@ -138,6 +146,14 @@ PR creation does not authorize merging. The repository PR remains unmerged until
 ## Rollback and Failure Handling
 
 Before database lockdown, the frontend can be rolled back independently. After lockdown, do not restore public insert access merely to recover availability; that would reopen the vulnerability. Keep registration fail-closed while repairing or rolling back the frontend or Edge Function to a previously verified server-validation version.
+
+## Security Vet and Residual Risk
+
+The design was vetted on 2026-08-06 against the repository's `security-best-practices` rules for general browser JavaScript and React. The vet confirmed the central boundary: the secret and verification remain server-side, the client is treated as untrusted, the outbound Siteverify destination is fixed, and direct browser authorization is removed. It also added the nested allowlist validation, bounded input, trusted metadata derivation, and sensitive-data-free logging requirements above.
+
+Turnstile verification proves that Cloudflare accepted the submitted token for an authorized hostname and action; it is not a general request-rate limiter and cannot prevent every human-assisted or token-farming attack. Rate limiting and anomaly monitoring remain defense-in-depth work and do not replace the fail-closed Siteverify/database boundary.
+
+The same review observed a separate pre-existing frontend hardening concern: the app has no production Content Security Policy, and waiver HTML is rendered through `dangerouslySetInnerHTML`. That concern is outside this Turnstile enforcement change and must not be represented as remediated by this design.
 
 ## Non-Goals
 
