@@ -8,6 +8,8 @@ const event = {
     end_date: '2026-12-15T17:00:00-05:00',
 };
 
+const assets = { logoUrl: '/assets/UMC_of_Kent_logo.svg', fontUrl: '/assets/source-sans-3-latin-wght-normal.woff2' };
+
 function registration(overrides = {}) {
     return {
         id: 'abc12345-long-reference',
@@ -27,32 +29,97 @@ function registration(overrides = {}) {
     };
 }
 
+function makePrintWindow({ fontsReady = Promise.resolve(), images = [] } = {}) {
+    return { document: { write: vi.fn(), close: vi.fn(), fonts: { ready: fontsReady }, images }, focus: vi.fn(), print: vi.fn() };
+}
+
 describe('parking passes', () => {
-    afterEach(() => vi.restoreAllMocks());
+    afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
-    it('builds a printable pass with only the approved information', () => {
-        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' });
+    it('builds the approved rotated monument document with only approved information', () => {
+        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, assets);
 
+        expect(html).toContain('Kent Methodist Church');
+        expect(html).toContain('Fall 2026 Parking');
         expect(html).toContain('&lt;ABC&amp;123&gt;');
         expect(html).toContain('2024 Blue Honda Civic');
         expect(html).toContain('VALID PARKING PASS');
+        expect(html).toContain('Parking permitted in designated areas only.');
         expect(html).toContain('abc12345');
         expect(html).toContain('Aug 15, 2026 - Dec 15, 2026');
-        expect(html).toContain('Display this pass');
+        expect(html).toContain('Display this pass clearly in your vehicle.');
         expect(html).not.toContain('driver@example.com');
         expect(html).not.toContain('123 Private Drive');
         expect(html).not.toContain('Private Insurance Co.');
+        expect(html.indexOf('2024 Blue Honda Civic')).toBeLessThan(html.indexOf('Parking permitted in designated areas only.'));
+        expect(html.indexOf('Parking permitted in designated areas only.')).toBeLessThan(html.indexOf('<footer class="pass-footer">'));
     });
 
-    it('places one landscape pass in the top third of a portrait Letter sheet', () => {
-        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' });
+    it('uses a rotated logical artwork area in the top third of a portrait Letter sheet', () => {
+        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, assets);
 
         expect(html).toContain('@page { size: letter portrait; margin: 0; }');
-        expect(html).toContain('html, body { width: 8.5in; height: 11in; margin: 0; }');
-        expect(html).toContain('.pass { width: 8.5in; height: 3.66in;');
-        expect(html).toContain('grid-template-columns: 1fr 1.4fr 1fr;');
-        expect(html).toContain('<body>\n<main class="pass">');
-        expect(html).not.toContain('align-items: center; justify-content: center;');
+        expect(html).toContain('html, body { width: 8.5in; height: 11in; margin: 0; overflow: hidden; }');
+        expect(html).toContain('.pass { position: relative; width: 8.5in; height: 3.66in; overflow: hidden; }');
+        expect(html).toContain('.pass-artwork { position: absolute; top: 0; left: 0; width: 3.66in; height: 8.5in; overflow: hidden; transform: translateX(8.5in) rotate(90deg); transform-origin: top left;');
+        expect(html).not.toContain('overflow: auto');
+        expect(html).not.toContain('overflow: scroll');
+    });
+
+    it('embeds the approved font and logo treatment', () => {
+        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, {
+            ...assets,
+            fontUrl: '/assets/source-sans-3-latin-wght-normal.woff2?cache=a&v=1',
+        });
+
+        expect(html).toContain("@font-face { font-family: 'Source Sans 3'; src: url('/assets/source-sans-3-latin-wght-normal.woff2?cache=a&v=1') format('woff2'); font-style: normal; font-weight: 200 900; font-display: swap; }");
+        expect(html).toContain(".plate { font-size: 42pt; line-height: .95; font-weight: 900;");
+        expect(html).toContain(".valid { border: 2px solid #111; background: #fff; color: #111; font-size: 13pt; font-weight: 900;");
+        expect(html).toContain(".organization { font-size: 11pt; font-weight: 700;");
+        expect(html).toContain(".event { font-size: 10pt; font-weight: 800;");
+        expect(html).toContain(".vehicle { font-size: 11pt; font-weight: 700;");
+        expect(html).toContain(".advisory { border-top: 1px solid #aaa; border-bottom: 1px solid #aaa; color: #777; font-size: 10pt; font-weight: 800;");
+        expect(html).toContain(".meta-label { color: #777; font-size: 7pt; font-weight: 700;");
+        expect(html).toContain(".meta-value { font-size: 9pt; font-weight: 700;");
+        expect(html).toContain(".direction { text-align: center; font-size: 8pt; font-weight: 600;");
+        expect(html.match(/\/assets\/UMC_of_Kent_logo\.svg/g)).toHaveLength(2);
+        expect(html).toContain('<img class="brand-logo" src="/assets/UMC_of_Kent_logo.svg" alt="Kent Methodist Church logo">');
+        expect(html).toContain('<img class="watermark" src="/assets/UMC_of_Kent_logo.svg" alt="" aria-hidden="true">');
+        expect(html).toContain('.brand-logo { width: .54in; height: .54in; object-fit: contain; filter: grayscale(1) brightness(0); }');
+        expect(html).toContain('.watermark { position: absolute; width: 6.6in; height: 6.6in;');
+        expect(html).toContain('filter: grayscale(1) brightness(0); opacity: .045;');
+        expect(html).toContain('opacity: .045;');
+    });
+
+    it('serializes hostile font URLs as one safe CSS string value', () => {
+        const fontUrl = "/assets/font.woff2?cache=a&v=1');}.injected{color:red}</style><img src=x onerror=alert(1)>/*";
+        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, {
+            ...assets,
+            fontUrl,
+        });
+
+        expect(html).toContain("src: url('/assets/font.woff2?cache=a&v=1\\');}.injected{color:red}\\3c /style>\\3c img src=x onerror=alert(1)>/*') format('woff2');");
+        expect(html).toMatch(/src: url\('(?:[^'\\]|\\.)*'\) format\('woff2'\);/);
+        expect(html).not.toContain("');}.injected{color:red}</style><img src=x onerror=alert(1)>");
+    });
+
+    it('serializes control characters in font URLs as terminated CSS hex escapes', () => {
+        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, {
+            ...assets,
+            fontUrl: '/assets/font.woff2?marker=\u0001&v=1',
+        });
+
+        expect(html).toContain("src: url('/assets/font.woff2?marker=\\1 &v=1') format('woff2');");
+    });
+
+    it('keeps hostile logo URLs inside escaped image attributes', () => {
+        const html = buildParkingPassHtml(registration(), event, { name: 'Kent Methodist Church' }, {
+            ...assets,
+            logoUrl: '/assets/logo.svg"><img src=x onerror=alert(1)>',
+        });
+
+        expect(html).toContain('<img class="brand-logo" src="/assets/logo.svg&quot;&gt;&lt;img src=x onerror=alert(1)&gt;" alt="Kent Methodist Church logo">');
+        expect(html).not.toContain('src="/assets/logo.svg"><img src=x onerror=alert(1)>');
     });
 
     it('does not open a window for a registration that cannot print a pass', () => {
@@ -61,6 +128,134 @@ describe('parking passes', () => {
         expect(() => printParkingPass(registration({ payment_status: 'pending' }), event, 'Kent Methodist Church'))
             .toThrow('Only valid parking registrations can be printed.');
         expect(open).not.toHaveBeenCalled();
+    });
+
+    it('opens a wide resizable print preview window', async () => {
+        const printWindow = makePrintWindow();
+        const open = vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        await printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        expect(open).toHaveBeenCalledWith('', '_blank', 'width=900,height=900,resizable=yes,scrollbars=yes');
+    });
+
+    it('waits for fonts and images before focusing and printing', async () => {
+        let resolveFonts;
+        let resolveImage;
+        const fontsReady = new Promise((resolve) => { resolveFonts = resolve; });
+        const image = {
+            complete: false,
+            addEventListener: vi.fn((eventName, listener) => {
+                if (eventName === 'load') resolveImage = listener;
+            }),
+        };
+        const printWindow = makePrintWindow({ fontsReady, images: [image] });
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        expect(result).toBeInstanceOf(Promise);
+        expect(printWindow.focus).not.toHaveBeenCalled();
+        expect(printWindow.print).not.toHaveBeenCalled();
+
+        resolveFonts();
+        await Promise.resolve();
+        expect(printWindow.focus).not.toHaveBeenCalled();
+        expect(printWindow.print).not.toHaveBeenCalled();
+
+        resolveImage();
+        await result;
+
+        expect(printWindow.focus).toHaveBeenCalledOnce();
+        expect(printWindow.print).toHaveBeenCalledOnce();
+        expect(printWindow.focus.mock.invocationCallOrder[0]).toBeLessThan(printWindow.print.mock.invocationCallOrder[0]);
+    });
+
+    it('prints when an incomplete image errors after fonts are ready', async () => {
+        let resolveFonts;
+        let resolveImageError;
+        const fontsReady = new Promise((resolve) => { resolveFonts = resolve; });
+        const image = {
+            complete: false,
+            addEventListener: vi.fn((eventName, listener) => {
+                if (eventName === 'error') resolveImageError = listener;
+            }),
+        };
+        const printWindow = makePrintWindow({ fontsReady, images: [image] });
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        resolveFonts();
+        resolveImageError();
+        await result;
+
+        expect(printWindow.focus).toHaveBeenCalledOnce();
+        expect(printWindow.print).toHaveBeenCalledOnce();
+    });
+
+    it('waits for a pending image when fonts fail to load', async () => {
+        vi.useFakeTimers();
+        let resolveImage;
+        const image = {
+            complete: false,
+            addEventListener: vi.fn((eventName, listener) => {
+                if (eventName === 'load') resolveImage = listener;
+            }),
+        };
+        const printWindow = makePrintWindow({
+            fontsReady: Promise.reject(new Error('Font unavailable')),
+            images: [image],
+        });
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        await vi.advanceTimersByTimeAsync(0);
+        expect(printWindow.print).not.toHaveBeenCalled();
+
+        resolveImage();
+        await result;
+        expect(printWindow.print).toHaveBeenCalledOnce();
+    });
+
+    it('prints when fonts are unavailable but all images are complete', async () => {
+        const printWindow = makePrintWindow({ images: [{ complete: true }] });
+        delete printWindow.document.fonts;
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        await result;
+        expect(printWindow.print).toHaveBeenCalledOnce();
+    });
+
+    it('clears the fallback timer when print assets become ready early', async () => {
+        vi.useFakeTimers();
+        const printWindow = makePrintWindow();
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        expect(vi.getTimerCount()).toBe(1);
+        await result;
+        expect(vi.getTimerCount()).toBe(0);
+        expect(printWindow.print).toHaveBeenCalledOnce();
+    });
+
+    it('prints after the 1500ms fallback when an asset never settles', async () => {
+        vi.useFakeTimers();
+        const printWindow = makePrintWindow({ fontsReady: new Promise(() => {}) });
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        await vi.advanceTimersByTimeAsync(1499);
+        expect(printWindow.print).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(1);
+        await result;
+        expect(printWindow.print).toHaveBeenCalledOnce();
     });
 
     it('requires a license plate before building a pass', () => {
