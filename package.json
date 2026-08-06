@@ -11,6 +11,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "check:migrations": "node tools/check-supabase-migrations.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",
     "deploy": "npm run build && firebase deploy --only hosting",
     "deploy:preview": "npm run build && firebase hosting:channel:deploy preview"
@@ -45,6 +46,7 @@
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
     "jsdom": "^28.1.0",
+    "supabase": "2.111.0",
     "tailwindcss": "^4.2.1",
     "vite": "^7.3.6",
     "vitest": "^4.1.10"

@@ -8,16 +8,11 @@ CREATE OR REPLACE FUNCTION public.mark_registration_paid(
 )
 RETURNS SETOF public.registrations
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = ''
 AS $$
 BEGIN
-    IF auth.uid() IS NULL OR NOT EXISTS (
-        SELECT 1
-        FROM public.org_members
-        WHERE org_id = p_org_id
-          AND user_id = auth.uid()
-    ) THEN
+    IF NOT private.is_org_member(p_org_id) THEN
         RAISE EXCEPTION 'Not authorized to manage this organization';
     END IF;
 
@@ -25,7 +20,12 @@ BEGIN
     UPDATE public.registrations
     SET payment_status = 'paid',
         payment_details = COALESCE(payment_details, '{}'::jsonb)
-            || jsonb_build_object('verifiedAt', now(), 'verifiedBy', auth.uid())
+            || jsonb_build_object(
+                'verifiedAt',
+                now(),
+                'verifiedBy',
+                (SELECT auth.uid())
+            )
     WHERE id = p_registration_id
       AND org_id = p_org_id
       AND status = 'confirmed'
@@ -39,6 +39,5 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.mark_registration_paid(uuid, uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.mark_registration_paid(uuid, uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.mark_registration_paid(uuid, uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.mark_registration_paid(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.mark_registration_paid(uuid, uuid) TO authenticated, service_role;
