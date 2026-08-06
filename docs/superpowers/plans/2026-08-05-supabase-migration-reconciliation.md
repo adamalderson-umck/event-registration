@@ -38,7 +38,7 @@
 **Files:**
 - Modify: first 35 files in `supabase/migrations/`
 - Replace: `supabase/migrations/20260806001553_require_verified_google_identity_email.sql`
-- Preserve: `supabase/migrations/20260806040613_tithely_payment_flow.sql`
+- Preserve: `supabase/migrations/20260806054726_tithely_payment_flow.sql`
 
 - [ ] Replace the first 35 applied migration bodies with `-- Applied remotely; represented by the schema baseline in 20260806001553.`
 - [ ] Put the reviewed schema-only dump in the latest applied migration.
@@ -60,8 +60,8 @@
 **Files:**
 - Modify only if verification reveals a documented workflow error: `README.md`, `.github/workflows/ci.yml`
 
-- [ ] Run `npx supabase migration list --linked`; require 36 aligned versions plus one local-only Tithe.ly version.
-- [ ] Run `npx supabase db push --linked --dry-run`; require only `20260806040613_tithely_payment_flow.sql`.
-- [ ] Read the live ledger again and confirm it still has 36 rows with latest version `20260806001553`.
+- [ ] Run `npx supabase migration list --linked`; require 37 aligned versions plus one local-only payment-ledger version.
+- [ ] Run `npx supabase db push --linked --dry-run`; require only `20260806060759_registration_payment_ledger.sql`.
+- [ ] Read the live ledger again and confirm it still has 37 rows with latest version `20260806054726`.
 - [ ] Run serially: `npm run check:migrations`, focused validator tests, `npm run test:run`, `npm run lint`, and `npm run build`.
 - [ ] Review `git status`, `git diff --check`, and the branch diff. Do not push, open a PR, merge, or close issue #5 without separate authorization.

@@ -16,7 +16,7 @@ This is one cohesive feature, not a set of independent subsystems: every UI and 
 
 **Create:**
 
-- `supabase/migrations/20260806054332_registration_payment_ledger.sql` — ledger schema, historical migration, projection triggers, secured record/void RPCs, and legacy RPC retirement.
+- `supabase/migrations/20260806060759_registration_payment_ledger.sql` — ledger schema, historical migration, projection triggers, secured record/void RPCs, and legacy RPC retirement.
 - `src/security/__tests__/paymentLedgerMigration.test.js` — source-level migration contract checks available without a local Supabase CLI.
 - `src/components/RecordPaymentDialog.jsx` — cash/check/Tithe.ly entry form and client-side conditional validation.
 - `src/components/__tests__/RecordPaymentDialog.test.jsx` — payment-entry form behavior.
@@ -43,7 +43,7 @@ This is one cohesive feature, not a set of independent subsystems: every UI and 
 **Files:**
 
 - Create: `src/security/__tests__/paymentLedgerMigration.test.js`
-- Create: `supabase/migrations/20260806054332_registration_payment_ledger.sql`
+- Create: `supabase/migrations/20260806060759_registration_payment_ledger.sql`
 
 - [ ] **Step 1: Write the failing migration contract test**
 
@@ -111,7 +111,7 @@ Expected: FAIL because no `_registration_payment_ledger.sql` migration exists.
 
 - [ ] **Step 3: Create the complete payment-ledger migration**
 
-Create `supabase/migrations/20260806054332_registration_payment_ledger.sql` with this contract:
+Create `supabase/migrations/20260806060759_registration_payment_ledger.sql` with this contract:
 
 ```sql
 ALTER TABLE public.registrations
@@ -507,7 +507,7 @@ Expected: both files PASS. No local Supabase runtime is configured in this repos
 - [ ] **Step 6: Commit the database contract**
 
 ```powershell
-git add src/security/__tests__/paymentLedgerMigration.test.js supabase/migrations/20260806054332_registration_payment_ledger.sql
+git add src/security/__tests__/paymentLedgerMigration.test.js supabase/migrations/20260806060759_registration_payment_ledger.sql
 git commit -m "feat: add registration payment ledger database contract"
 ```
 
@@ -1736,7 +1736,7 @@ Expected: lint exits 0, Vite production build exits 0, and `git diff --check` pr
 
 - [ ] **Step 5: Apply the migration only to an authorized nonproduction target**
 
-After adopting the reconciled Supabase schema baseline and pinned CLI, apply `20260806054332_registration_payment_ledger.sql` only after `20260806040613_tithely_payment_flow.sql`. Verify locally first, then use the linked migration dry run before any authorized production push:
+After adopting the reconciled Supabase schema baseline and pinned CLI, apply `20260806060759_registration_payment_ledger.sql` only after the remotely applied `20260806054726_tithely_payment_flow.sql`. Verify locally first, then use the linked migration dry run before any authorized production push:
 
 ```text
 1. Anonymous record/void RPC calls fail.

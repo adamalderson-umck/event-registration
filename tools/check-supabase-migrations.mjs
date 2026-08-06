@@ -39,9 +39,11 @@ export const EXPECTED_APPLIED_MIGRATIONS = [
   '20260806001057_restrict_admin_access_to_kentmethodist_org.sql',
   '20260806001318_harden_remaining_admin_functions.sql',
   '20260806001553_require_verified_google_identity_email.sql',
+  '20260806054726_tithely_payment_flow.sql',
 ];
 
-export const LATEST_APPLIED_VERSION = '20260806001553';
+export const BASELINE_MIGRATION = '20260806001553_require_verified_google_identity_email.sql';
+export const LATEST_APPLIED_VERSION = '20260806054726';
 
 const MIGRATION_FILENAME = /^(\d{14})_([a-z0-9_]+)\.sql$/;
 const PROJECT_URL = /https:\/\/[a-z0-9]{20}\.supabase\.co\b/;
@@ -63,7 +65,10 @@ export function validateMigrationDirectory(migrationsDirectory, options = {}) {
     .sort();
   const errors = [];
   const expectedFiles = new Set(expectedAppliedMigrations);
-  const baselineMigration = expectedAppliedMigrations.at(-1);
+  const baselineMigration = options.baselineMigration
+    ?? (expectedAppliedMigrations.includes(BASELINE_MIGRATION)
+      ? BASELINE_MIGRATION
+      : expectedAppliedMigrations.at(-1));
   const baselineVersion = baselineMigration?.slice(0, 14);
   const expectedMarker = baselineVersion
     ? `-- Applied remotely; represented by the schema baseline in ${baselineVersion}.`
@@ -110,8 +115,10 @@ export function validateMigrationDirectory(migrationsDirectory, options = {}) {
         if (!containsExecutableSql(sql)) {
           errors.push(`${filename}: baseline must contain executable SQL`);
         }
-      } else if (sql.trim() !== expectedMarker) {
+      } else if (filename < baselineMigration && sql.trim() !== expectedMarker) {
         errors.push(`${filename}: applied history must be a comment-only compatibility marker`);
+      } else if (filename > baselineMigration && !containsExecutableSql(sql)) {
+        errors.push(`${filename}: applied forward migration must contain executable SQL`);
       }
     }
 

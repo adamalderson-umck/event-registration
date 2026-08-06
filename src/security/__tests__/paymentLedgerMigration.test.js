@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const migrationsDir = path.resolve(import.meta.dirname, '../../../supabase/migrations');
-const migrationName = '20260806054332_registration_payment_ledger.sql';
+const migrationName = '20260806060759_registration_payment_ledger.sql';
 const migrationPath = path.join(migrationsDir, migrationName);
 const migrationSql = fs.existsSync(migrationPath)
   ? fs.readFileSync(migrationPath, 'utf8')

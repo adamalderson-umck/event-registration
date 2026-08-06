@@ -69,7 +69,7 @@ npx supabase migration list --linked
 npx supabase db push --linked --dry-run
 ```
 
-The expected current state is 36 aligned applied migrations and one local-only Tithe.ly migration. If the histories differ in any other way, stop: do not run `db push`, `migration repair`, or `db reset --linked`. Any production write requires separate explicit authorization.
+The expected state before the payment-ledger release is 37 aligned applied migrations through `20260806054726_tithely_payment_flow.sql` and one local-only `20260806060759_registration_payment_ledger.sql` migration. If the histories differ in any other way, stop: do not run `db push`, `migration repair`, or `db reset --linked`. Any production write requires separate explicit authorization.
 
 ## Production Deployment
 

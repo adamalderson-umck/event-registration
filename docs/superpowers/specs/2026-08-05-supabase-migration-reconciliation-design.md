@@ -15,7 +15,8 @@ The committed migration directory has three roles:
 
 1. The first 35 applied versions are timestamp markers. Their filenames preserve remote-history compatibility, and their bodies contain comments only.
 2. Applied version `20260806001553_require_verified_google_identity_email.sql` is the baseline. It creates the current intended application schema from an empty local Supabase database, including required grants, policies, functions, triggers, extensions, storage configuration, and inert local webhook configuration.
-3. `20260806040613_tithely_payment_flow.sql` remains the single unapplied forward migration.
+3. Applied version `20260806054726_tithely_payment_flow.sql` records the exact forward migration already present in the hosted ledger.
+4. `20260806060759_registration_payment_ledger.sql` is the single unapplied forward migration.
 
 Supabase compares migration timestamps, not SQL bodies, when listing local and remote history. The markers therefore align with the existing production ledger without replaying incomplete historical implementation details.
 
@@ -41,13 +42,13 @@ This work must not run a real `db push`, `migration repair`, `db reset --linked`
 
 Completion requires all of the following:
 
-- the migration validator accepts exactly 35 markers, one baseline, and one pending forward migration;
+- the migration validator accepts exactly 35 markers, one baseline, one applied forward migration, and one pending forward migration;
 - a clean local `db reset --local --no-seed` succeeds;
 - local schema checks confirm the expected application tables, RLS policies, functions, grants, triggers, and Tithe.ly contract;
-- `migration list --linked` shows 36 aligned applied versions and one local-only pending version;
-- `db push --linked --dry-run` proposes only the pending Tithe.ly migration;
+- `migration list --linked` shows 37 aligned applied versions and one local-only pending version;
+- `db push --linked --dry-run` proposes only the pending payment-ledger migration;
 - the full application tests, lint, and build pass; and
-- production remains at 36 applied migrations.
+- production remains at 37 applied migrations until the separately authorized payment-ledger push.
 
 ## Future Workflow
 
