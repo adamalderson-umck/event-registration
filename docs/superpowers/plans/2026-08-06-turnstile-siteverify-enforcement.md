@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make every public registration fail closed unless Cloudflare Siteverify validates a token for the approved hostname and `event_registration` action, while preventing direct browser inserts.
+**Goal:** Make every public registration fail closed unless Cloudflare Siteverify validates a token for the approved hostname and `event_registration` action, while preventing anonymous direct inserts.
 
-**Architecture:** The React form sends an untrusted registration request to a public Supabase Edge Function. Pure validation helpers bound and reconstruct the request from the current event definition, the function verifies Turnstile at Cloudflare's fixed endpoint and inserts with the server credential, and a forward-only migration removes `INSERT` from browser roles.
+**Architecture:** The React form sends an untrusted registration request to a public Supabase Edge Function. Pure validation helpers bound and reconstruct the request from the current event definition, the function verifies Turnstile at Cloudflare's fixed endpoint and inserts with the server credential, and a forward-only migration removes anonymous `INSERT` while limiting the existing authenticated CSV-import path to members of the target organization.
 
 **Tech Stack:** React 19, Vite, Vitest, Supabase Edge Functions on Deno 2, Supabase JavaScript client, PostgreSQL migrations, Cloudflare Turnstile Siteverify.
 
@@ -20,7 +20,7 @@
 - Modify `supabase/config.toml`: declare `submit-registration` with `verify_jwt = false`.
 - Modify `src/components/EventRegistrationForm.jsx`: include the Turnstile action, invoke the function, remove direct insert/IP capture, and reset the widget after failures.
 - Modify `src/components/__tests__/EventRegistrationForm.test.jsx`: replace direct-insert expectations with Edge Function request/response assertions and preserve the initialization regression.
-- Create `supabase/migrations/20260806070000_enforce_siteverify_registration_insert.sql`: drop the bypass policy and revoke direct browser `INSERT`.
+- Create `supabase/migrations/20260806070000_enforce_siteverify_registration_insert.sql`: drop the bypass policy, revoke anonymous `INSERT`, and add a member-only authenticated import policy.
 - Create `src/security/__tests__/siteverifyRegistrationMigration.test.js`: assert the migration closes both the RLS-policy and grant paths.
 
 ### Task 1: Pure registration request validation
@@ -263,8 +263,10 @@ git commit -m "fix: submit registrations through Siteverify"
 
 ```js
 expect(sql).toMatch(/drop policy if exists "?registrations_insert_valid"? on public\.registrations/i);
-expect(sql).toMatch(/revoke insert on table public\.registrations from anon, authenticated/i);
-expect(sql).not.toMatch(/grant\s+insert[\s\S]+\b(?:anon|authenticated)\b/i);
+expect(sql).toMatch(/revoke insert on table public\.registrations from anon/i);
+expect(sql).toMatch(/create policy "?registrations_authenticated_member_insert"?[\s\S]+to authenticated/i);
+expect(sql).toMatch(/private\.is_org_member\(registrations\.org_id\)/i);
+expect(sql).not.toMatch(/grant\s+insert[\s\S]+to\s+anon/i);
 ```
 
 Run: `npx vitest run src/security/__tests__/siteverifyRegistrationMigration.test.js --maxWorkers=1`
@@ -277,7 +279,22 @@ Run `npx supabase migration new enforce_siteverify_registration_insert`; rename 
 
 ```sql
 DROP POLICY IF EXISTS "registrations_insert_valid" ON public.registrations;
-REVOKE INSERT ON TABLE public.registrations FROM anon, authenticated;
+REVOKE INSERT ON TABLE public.registrations FROM anon;
+
+CREATE POLICY "registrations_authenticated_member_insert"
+ON public.registrations
+FOR INSERT
+TO authenticated
+WITH CHECK (
+    (SELECT private.is_org_member(registrations.org_id))
+    AND EXISTS (
+        SELECT 1
+        FROM public.events
+        WHERE events.id = registrations.event_id
+          AND events.org_id = registrations.org_id
+          AND events.status = 'active'
+    )
+);
 ```
 
 - [ ] **Step 3: Validate migration and assertion**
@@ -378,5 +395,5 @@ Use a user-approved production event because this creates a real registration an
 
 - Spec coverage: every security invariant, fail-closed case, hostname/action check, nested allowlist, metadata derivation, database denial, test proof, deployment ordering, rollback rule, and no-merge rule maps to a task above.
 - Placeholder scan: no `TBD`, `TODO`, “implement later,” or undefined follow-on task remains.
-- Type consistency: browser camelCase request keys match `RegistrationRequest`; database snake_case keys exist only in the server-built `RegistrationInsert`; the response fields match current success/payment consumers.
+- Type consistency: browser camelCase request keys match `RegistrationRequest`; database snake_case keys exist only in the server-built `RegistrationInsert`; the response fields match current success/payment consumers; the authenticated exception matches the existing admin CSV importer and remains organization-member scoped.
 - Explicit non-scope: CSP and waiver HTML sanitization remain separately reported rather than bundled into this registration-boundary PR.

@@ -5,7 +5,7 @@
 
 ## Decision
 
-Route every public registration through a new Supabase Edge Function that verifies the Cloudflare Turnstile token before writing the registration. Remove direct `INSERT` access to `public.registrations` from browser roles so the verification boundary cannot be bypassed.
+Route every public registration through a new Supabase Edge Function that verifies the Cloudflare Turnstile token before writing the registration. Remove anonymous direct `INSERT` access to `public.registrations` so the public verification boundary cannot be bypassed. Preserve the existing authenticated CSV-import workflow only for members of the target organization through a dedicated RLS policy.
 
 The registration path fails closed. A missing, invalid, expired, reused, or mismatched token, a Siteverify network failure, or a missing server secret prevents registration.
 
@@ -29,7 +29,9 @@ A public registration may be created only when all of the following are true:
 3. the verified hostname is exactly `events.kentmethodist.org` or `event-registration-b7840.web.app`;
 4. the verified action is `event_registration`;
 5. the requested organization and event exist, match each other, and the event is active and open for registration; and
-6. the registration is inserted by the trusted server path rather than a browser database role.
+6. a public registration is inserted by the trusted server path rather than the anonymous browser role.
+
+Authenticated organization members may continue importing registrations from the admin CSV workflow. That operator path is not a public registration: it requires an authenticated Kent Methodist account and server-enforced membership in the registration's organization.
 
 No outage or verification error may weaken this invariant.
 
@@ -87,7 +89,8 @@ Secrets are stored in Supabase Edge Function secrets and never committed, logged
 A forward-only migration:
 
 - drops `registrations_insert_valid`;
-- revokes `INSERT` on `public.registrations` from `anon` and `authenticated`; and
+- revokes `INSERT` on `public.registrations` from `anon`;
+- keeps `INSERT` for `authenticated` only behind a new `registrations_authenticated_member_insert` policy that requires `private.is_org_member(org_id)`, a matching event/organization relationship, and an active event; and
 - leaves existing member `SELECT` and `UPDATE` policies unchanged.
 
 The service role remains able to insert through the Edge Function. No public `SECURITY DEFINER` registration RPC is introduced.
@@ -122,7 +125,7 @@ Implementation follows test-first development. Required proof includes:
 - a failing then passing frontend test showing submission invokes `submit-registration` with the token and no longer calls direct table insert;
 - Edge Function unit tests for valid verification, missing token, Siteverify rejection, network failure, hostname mismatch, action mismatch, expired or reused token response, invalid event, and invalid payment method;
 - Edge Function unit tests for unsupported content type, oversized bodies/tokens/nested values, unknown form fields, unknown or duplicate waiver IDs, client-supplied metadata, and sensitive-data-free logging;
-- a migration assertion proving browser roles have neither an insert policy nor `INSERT` privilege;
+- a migration assertion proving `anon` has neither an insert policy nor `INSERT` privilege and authenticated inserts require target-organization membership plus an active matching event;
 - the complete application test suite, lint, migration validation, and production build;
 - a production invalid-token request that returns `403` without inserting; and
 - after database cutover, a direct anonymous Data API insert attempt that is denied.
