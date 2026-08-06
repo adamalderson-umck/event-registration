@@ -40,6 +40,8 @@ describe('registration payment ledger migration', () => {
     expect(migrationSql).toMatch(/amount\s+numeric\(12,\s*2\)\s+not null check\s*\(\s*amount\s*>\s*0\s+and\s+amount\s*<>\s*'nan'::numeric\s+and\s+amount\s*<>\s*'infinity'::numeric\s+and\s+amount\s*<>\s*'-infinity'::numeric\s*\)/i);
     expect(migrationSql).toMatch(/registration_id\s+uuid\s+not null references public\.registrations\(id\) on delete restrict/i);
     expect(migrationSql).toMatch(/org_id\s+uuid\s+not null references public\.organizations\(id\) on delete restrict/i);
+    expect(migrationSql).toMatch(/alter table public\.registrations\s+add constraint registrations_id_org_key\s+unique\s*\(\s*id\s*,\s*org_id\s*\)\s*;[\s\S]*create table public\.registration_payments/i);
+    expect(migrationSql).toMatch(/constraint registration_payments_registration_org_fkey\s+foreign key\s*\(\s*registration_id\s*,\s*org_id\s*\)\s+references public\.registrations\s*\(\s*id\s*,\s*org_id\s*\)\s+on delete restrict/i);
     expect(migrationSql).toMatch(/created_at\s+timestamptz\s+not null default now\(\)/i);
     expect(migrationSql).toMatch(/registration_payments_cash_reference_check/i);
     expect(migrationSql).toMatch(/registration_payments_non_cash_reference_check\s+check\s*\(\s*payment_method\s*=\s*'cash'\s+or\s+\(reference_number\s+is\s+not\s+null\s+and\s+btrim\(reference_number\)\s*<>\s*''\)\s*\)/i);

@@ -7,6 +7,9 @@ ALTER TABLE public.registrations
 ALTER TABLE public.registrations
   DROP CONSTRAINT IF EXISTS registrations_payment_status_check;
 
+ALTER TABLE public.registrations
+  ADD CONSTRAINT registrations_id_org_key UNIQUE (id, org_id);
+
 CREATE TABLE public.registration_payments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   registration_id uuid NOT NULL REFERENCES public.registrations(id) ON DELETE RESTRICT,
@@ -25,6 +28,9 @@ CREATE TABLE public.registration_payments (
   voided_at timestamptz,
   voided_by uuid REFERENCES auth.users(id) ON DELETE RESTRICT,
   void_reason text,
+  CONSTRAINT registration_payments_registration_org_fkey
+    FOREIGN KEY (registration_id, org_id)
+    REFERENCES public.registrations (id, org_id) ON DELETE RESTRICT,
   CONSTRAINT registration_payments_cash_reference_check
     CHECK (payment_method <> 'cash' OR reference_number IS NULL),
   CONSTRAINT registration_payments_non_cash_reference_check
