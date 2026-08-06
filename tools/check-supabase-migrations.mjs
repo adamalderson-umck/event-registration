@@ -52,6 +52,58 @@ const SECURITY_INVOKER = /\bSECURITY\s+INVOKER\b/i;
 const ORGANIZATION_MEMBERSHIP_CHECK = /\bprivate\s*\.\s*is_org_member\s*\(\s*p_org_id\s*\)/i;
 const SUPPORTED_PAYMENT_METHODS = /\bpayment_method\s+IN\s*\(\s*'tithely'\s*,\s*'in_person'\s*\)/i;
 
+function stripSqlComments(sql) {
+  let result = '';
+  let quote = null;
+
+  for (let index = 0; index < sql.length; index += 1) {
+    const character = sql[index];
+    const nextCharacter = sql[index + 1];
+
+    if (quote) {
+      result += character;
+      if (character === quote && nextCharacter === quote) {
+        result += nextCharacter;
+        index += 1;
+      } else if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (character === "'" || character === '"') {
+      quote = character;
+      result += character;
+      continue;
+    }
+
+    if (character === '-' && nextCharacter === '-') {
+      const lineEnd = sql.indexOf('\n', index + 2);
+      if (lineEnd === -1) {
+        break;
+      }
+      result += '\n';
+      index = lineEnd;
+      continue;
+    }
+
+    if (character === '/' && nextCharacter === '*') {
+      const commentEnd = sql.indexOf('*/', index + 2);
+      const comment = sql.slice(index, commentEnd === -1 ? sql.length : commentEnd + 2);
+      result += comment.replace(/[^\r\n]/g, ' ');
+      if (commentEnd === -1) {
+        break;
+      }
+      index = commentEnd + 1;
+      continue;
+    }
+
+    result += character;
+  }
+
+  return result;
+}
+
 function hasPaymentMethodAssignment(sql) {
   return sql.split(';').some((statement) => /\bSET\b[\s\S]*?\bpayment_method\s*=/i.test(statement));
 }
@@ -102,16 +154,17 @@ export function validateMigrationDirectory(migrationsDirectory, options = {}) {
     }
 
     if (TITHELY_FILENAME.test(filename)) {
-      if (!SECURITY_INVOKER.test(sql)) {
+      const executableSql = stripSqlComments(sql);
+      if (!SECURITY_INVOKER.test(executableSql)) {
         errors.push(`${filename}: Tithe.ly payment flow must use SECURITY INVOKER`);
       }
-      if (!ORGANIZATION_MEMBERSHIP_CHECK.test(sql)) {
+      if (!ORGANIZATION_MEMBERSHIP_CHECK.test(executableSql)) {
         errors.push(`${filename}: Tithe.ly payment flow must call private.is_org_member(p_org_id)`);
       }
-      if (!SUPPORTED_PAYMENT_METHODS.test(sql)) {
+      if (!SUPPORTED_PAYMENT_METHODS.test(executableSql)) {
         errors.push(`${filename}: Tithe.ly payment flow must support payment_method IN ('tithely', 'in_person')`);
       }
-      if (hasPaymentMethodAssignment(sql)) {
+      if (hasPaymentMethodAssignment(executableSql)) {
         errors.push(`${filename}: Tithe.ly payment flow must not assign payment_method in a SET clause`);
       }
     }
