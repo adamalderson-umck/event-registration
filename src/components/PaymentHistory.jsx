@@ -30,16 +30,16 @@ function formatRecordedAt(createdAt) {
 }
 
 function getPaymentMethodDescription(payment) {
-    if (payment.payment_method === 'cash') {
+    if (payment.method === 'cash') {
         return 'Cash';
     }
 
-    const method = payment.payment_method === 'tithely' ? 'Tithe.ly' : 'Check';
+    const method = payment.method === 'tithely' ? 'Tithe.ly' : 'Check';
     return `${method} #${payment.reference_number}`;
 }
 
 function getRecordedBy(payment) {
-    const recordedBy = payment.recorded_by_name || payment.recorded_by_email || payment.recorded_by;
+    const recordedBy = payment.created_by_name || payment.created_by_email || payment.created_by;
     return typeof recordedBy === 'string' && recordedBy.trim() ? recordedBy : 'Unknown administrator';
 }
 

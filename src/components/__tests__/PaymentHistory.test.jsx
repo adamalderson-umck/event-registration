@@ -8,21 +8,21 @@ import PaymentHistory from '../PaymentHistory';
 const payments = [
     {
         id: 'active-payment',
-        payment_method: 'check',
+        method: 'check',
         amount: 25,
         payment_date: '2026-08-03',
         reference_number: '1042',
         created_at: '2026-08-03T10:00:00Z',
-        recorded_by_name: 'Ada Admin',
+        created_by: 'admin-1',
     },
     {
         id: 'voided-payment',
-        payment_method: 'tithely',
+        method: 'tithely',
         amount: 40,
         payment_date: '2026-08-04',
         reference_number: 'TX-42',
         created_at: '2026-08-04T09:00:00Z',
-        recorded_by_name: 'Grace Greeter',
+        created_by: 'admin-2',
         voided_at: '2026-08-04T11:00:00Z',
         void_reason: 'Duplicate entry',
     },
@@ -53,8 +53,8 @@ describe('PaymentHistory', () => {
         expect(rows[1]).toHaveTextContent('Check #1042');
         expect(rows[1]).toHaveTextContent('$25.00');
         expect(screen.getAllByRole('button', { name: 'Void Payment' })).toHaveLength(1);
-        expect(screen.getByText(/recorded .*Grace Greeter/i)).toBeInTheDocument();
-        expect(screen.getByText(/recorded .*Ada Admin/i)).toBeInTheDocument();
+        expect(screen.getByText(/recorded .*admin-2/i)).toBeInTheDocument();
+        expect(screen.getByText(/recorded .*admin-1/i)).toBeInTheDocument();
     });
 
     it('shows an empty state when no payments have been recorded', () => {
