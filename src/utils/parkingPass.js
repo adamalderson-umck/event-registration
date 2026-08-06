@@ -88,7 +88,7 @@ body { box-sizing: border-box; font-family: 'Source Sans 3', Arial, sans-serif; 
 .main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow: hidden; }
 .watermark { position: absolute; width: 6.6in; height: 6.6in; left: 50%; top: 52%; transform: translate(-50%, -50%); object-fit: contain; filter: grayscale(1) brightness(0); opacity: .045; }
 .main > div:not(.watermark) { position: relative; }
-.valid { background: #111; color: #fff; font-size: 13pt; font-weight: 900; letter-spacing: .035in; padding: .07in .16in; }
+.valid { border: 2px solid #111; background: #fff; color: #111; font-size: 13pt; font-weight: 900; letter-spacing: .035in; padding: .07in .16in; }
 .plate { font-size: 42pt; line-height: .95; font-weight: 900; letter-spacing: .025in; margin-top: .15in; word-break: break-word; }
 .plate-rule { width: 100%; border-top: 2px solid #111; margin-top: .11in; }
 .vehicle { font-size: 11pt; font-weight: 700; text-transform: uppercase; margin-top: .09in; }
@@ -142,7 +142,7 @@ function waitForPrintAssets(printWindow) {
 
 export function printParkingPass(registration, event, organization) {
     const html = buildParkingPassHtml(registration, event, organization);
-    const printWindow = window.open('', '_blank', 'width=408,height=1200');
+    const printWindow = window.open('', '_blank', 'width=900,height=900,resizable=yes,scrollbars=yes');
     if (!printWindow) {
         throw new Error('Allow popups to print the parking pass.');
     }

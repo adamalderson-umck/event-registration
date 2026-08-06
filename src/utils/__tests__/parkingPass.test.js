@@ -74,7 +74,7 @@ describe('parking passes', () => {
 
         expect(html).toContain("@font-face { font-family: 'Source Sans 3'; src: url('/assets/source-sans-3-latin-wght-normal.woff2?cache=a&v=1') format('woff2'); font-style: normal; font-weight: 200 900; font-display: swap; }");
         expect(html).toContain(".plate { font-size: 42pt; line-height: .95; font-weight: 900;");
-        expect(html).toContain(".valid { background: #111; color: #fff; font-size: 13pt; font-weight: 900;");
+        expect(html).toContain(".valid { border: 2px solid #111; background: #fff; color: #111; font-size: 13pt; font-weight: 900;");
         expect(html).toContain(".organization { font-size: 11pt; font-weight: 700;");
         expect(html).toContain(".event { font-size: 10pt; font-weight: 800;");
         expect(html).toContain(".vehicle { font-size: 11pt; font-weight: 700;");
@@ -128,6 +128,15 @@ describe('parking passes', () => {
         expect(() => printParkingPass(registration({ payment_status: 'pending' }), event, 'Kent Methodist Church'))
             .toThrow('Only valid parking registrations can be printed.');
         expect(open).not.toHaveBeenCalled();
+    });
+
+    it('opens a wide resizable print preview window', async () => {
+        const printWindow = makePrintWindow();
+        const open = vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        await printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        expect(open).toHaveBeenCalledWith('', '_blank', 'width=900,height=900,resizable=yes,scrollbars=yes');
     });
 
     it('waits for fonts and images before focusing and printing', async () => {
