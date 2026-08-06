@@ -177,6 +177,34 @@ function maskDollarQuotedBodies(sql) {
   return result.join('');
 }
 
+function findClosingDollarDelimiter(sql, delimiter, startIndex) {
+  let quote = null;
+
+  for (let index = startIndex; index < sql.length; index += 1) {
+    const character = sql[index];
+    const nextCharacter = sql[index + 1];
+    if (quote) {
+      if (character === quote && nextCharacter === quote) {
+        index += 1;
+      } else if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+
+    if (sql.startsWith(delimiter, index)) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
 function extractMarkRegistrationPaidDefinition(sql) {
   const commentlessSql = stripSqlComments(sql);
   const declarationSearch = maskDollarQuotedBodies(maskOrdinaryQuotedStrings(commentlessSql));
@@ -194,7 +222,7 @@ function extractMarkRegistrationPaidDefinition(sql) {
   const delimiter = bodyStartMatch[1];
   const delimiterStart = declarationStart + bodyStartMatch.index + bodyStartMatch[0].lastIndexOf(delimiter);
   const bodyStart = delimiterStart + delimiter.length;
-  const bodyEnd = commentlessSql.indexOf(delimiter, bodyStart);
+  const bodyEnd = findClosingDollarDelimiter(commentlessSql, delimiter, bodyStart);
   if (bodyEnd === -1) {
     return null;
   }

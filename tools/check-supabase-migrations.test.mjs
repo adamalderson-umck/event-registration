@@ -261,4 +261,52 @@ describe('validateMigrationDirectory', () => {
 
     expect(errors).toEqual([]);
   });
+
+  it('detects a payment_method assignment after a $$ delimiter inside a quoted body literal', () => {
+    const directory = createMigrationsDirectory();
+    writeMigration(
+      directory,
+      '20260102000000_tithely_payment_flow.sql',
+      `CREATE OR REPLACE FUNCTION public.mark_registration_paid(p_org_id uuid) RETURNS void
+        LANGUAGE plpgsql SECURITY INVOKER AS $$
+        BEGIN
+          PERFORM private.is_org_member(p_org_id);
+          IF payment_method IN ('tithely', 'in_person') THEN NULL; END IF;
+          PERFORM '$$';
+          UPDATE public.registrations SET payment_method = 'in_person_verified';
+        END;
+        $$;`,
+    );
+
+    const { errors } = validateMigrationDirectory(directory, {
+      expectedAppliedMigrations: [],
+      latestAppliedVersion: '20260101000000',
+    });
+
+    expect(errors.join('\n')).toMatch(/must not assign payment_method/i);
+  });
+
+  it('detects a payment_method assignment after a tagged delimiter inside a quoted body literal', () => {
+    const directory = createMigrationsDirectory();
+    writeMigration(
+      directory,
+      '20260102000000_tithely_payment_flow.sql',
+      `CREATE OR REPLACE FUNCTION public.mark_registration_paid(p_org_id uuid) RETURNS void
+        LANGUAGE plpgsql SECURITY INVOKER AS $function$
+        BEGIN
+          PERFORM private.is_org_member(p_org_id);
+          IF payment_method IN ('tithely', 'in_person') THEN NULL; END IF;
+          PERFORM '$function$';
+          UPDATE public.registrations SET payment_method = 'in_person_verified';
+        END;
+        $function$;`,
+    );
+
+    const { errors } = validateMigrationDirectory(directory, {
+      expectedAppliedMigrations: [],
+      latestAppliedVersion: '20260101000000',
+    });
+
+    expect(errors.join('\n')).toMatch(/must not assign payment_method/i);
+  });
 });
