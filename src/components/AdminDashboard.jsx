@@ -13,6 +13,7 @@ import ShareEventModal from './ShareEventModal';
 import EventDonutChart from './EventDonutChart';
 import EventTypeChooser from './EventTypeChooser';
 import { validateParkingEventRecord } from '../config/eventPresets';
+import { validateEventEmailRecord } from '../config/eventEmailMessages';
 import { buildDuplicateEventPayload } from '../utils/eventPayload';
 
 // Lazy-loaded sub-views
@@ -298,7 +299,10 @@ export default function AdminDashboard() {
     const handleStatusChange = async (eventId, newStatus) => {
         const targetEvent = events.find((event) => event.id === eventId);
         if (newStatus === 'active') {
-            const validationError = validateParkingEventRecord(targetEvent)[0];
+            const validationError = [
+                ...validateParkingEventRecord(targetEvent),
+                ...validateEventEmailRecord(targetEvent),
+            ][0];
             if (validationError) {
                 setDashboardError(validationError);
                 setTimeout(() => setDashboardError(''), 4000);
