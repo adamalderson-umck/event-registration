@@ -9,7 +9,6 @@ export default function TithelyConfigurationFields({
     tithelyGivingUrl = '',
     tithelyEmbedCode = '',
     tithelyEmbedConfig = null,
-    allowInPerson = false,
     onChange,
 }) {
     const draftStatus = getTithelyDraftStatus({
@@ -72,7 +71,7 @@ export default function TithelyConfigurationFields({
             )}
             {hasError && (
                 <p id={ERROR_ID} role="alert" className="text-xs text-danger">
-                    {draftStatus.error}{allowInPerson ? ' Pay in Person remains available.' : ''}
+                    {draftStatus.error}
                 </p>
             )}
         </div>

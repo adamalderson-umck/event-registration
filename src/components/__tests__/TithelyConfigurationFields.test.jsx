@@ -57,7 +57,7 @@ describe('TithelyConfigurationFields', () => {
 
         const alert = screen.getByRole('alert');
         expect(alert).toHaveAttribute('id', 'event-tithely-configuration-error');
-        expect(alert).toHaveTextContent('Pay in Person remains available');
+        expect(alert).not.toHaveTextContent('Pay in Person remains available');
         expect(screen.getByLabelText('Tithe.ly Giving Form URL')).toHaveAttribute('aria-invalid', 'true');
         expect(screen.getByLabelText('Tithe.ly Giving Form URL')).toHaveAttribute('aria-describedby', 'event-tithely-configuration-error');
         expect(screen.getByLabelText('Tithe.ly Embed Code')).not.toHaveAttribute('aria-invalid');
@@ -89,7 +89,7 @@ describe('TithelyConfigurationFields', () => {
             />,
         );
 
-        expect(screen.getByRole('alert')).toHaveTextContent('must use the same form ID');
+        expect(screen.getByRole('alert')).toHaveTextContent('must use the same form, location, fund, amount, and frequency');
         expect(screen.getByLabelText('Tithe.ly Giving Form URL')).toHaveAttribute('aria-invalid', 'true');
         expect(screen.getByLabelText('Tithe.ly Giving Form URL')).toHaveAttribute('aria-describedby', 'event-tithely-configuration-error');
         expect(screen.getByLabelText('Tithe.ly Embed Code')).toHaveAttribute('aria-invalid', 'true');
@@ -133,7 +133,7 @@ describe('TithelyConfigurationFields', () => {
         {
             name: 'mismatched form IDs',
             props: { tithelyGivingUrl: GIVING_URL, tithelyEmbedCode: makeEmbedCode(OTHER_FORM_ID) },
-            message: 'Tithe.ly URL and embed code must use the same form ID.',
+            message: 'Tithe.ly URL and embed code must use the same form, location, fund, amount, and frequency.',
         },
     ])('shows the distinct $name editor message', ({ props, message }) => {
         render(<TithelyConfigurationFields {...props} onChange={vi.fn()} />);
