@@ -527,3 +527,5 @@ $$;
 
 REVOKE ALL ON FUNCTION public.join_demo_org() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.join_demo_org() TO authenticated, service_role;
+
+;

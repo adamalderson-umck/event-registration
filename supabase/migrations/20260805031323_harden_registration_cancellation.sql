@@ -40,4 +40,4 @@ GRANT EXECUTE ON FUNCTION public.cancel_registration(uuid, uuid) TO authenticate
 
 REVOKE ALL ON FUNCTION public.handle_registration_cancellation() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.handle_registration_cancellation() FROM anon;
-REVOKE ALL ON FUNCTION public.handle_registration_cancellation() FROM authenticated;
+REVOKE ALL ON FUNCTION public.handle_registration_cancellation() FROM authenticated;;

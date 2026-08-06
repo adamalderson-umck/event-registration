@@ -32,3 +32,5 @@ $$;
 
 REVOKE ALL ON FUNCTION private.is_kentmethodist_admin_user(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION private.is_kentmethodist_admin_user(uuid) TO authenticated, service_role;
+
+;
