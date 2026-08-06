@@ -42,8 +42,8 @@ describe('registration payment ledger migration', () => {
     expect(migrationSql).toMatch(/org_id\s+uuid\s+not null references public\.organizations\(id\) on delete restrict/i);
     expect(migrationSql).toMatch(/created_at\s+timestamptz\s+not null default now\(\)/i);
     expect(migrationSql).toMatch(/registration_payments_cash_reference_check/i);
-    expect(migrationSql).toMatch(/registration_payments_non_cash_reference_check\s+check\s*\(\s*payment_method\s*=\s*'cash'\s+or\s+btrim\(reference_number\)\s*<>\s*''\s*\)/i);
-    expect(migrationSql).toMatch(/registration_payments_void_metadata_check/i);
+    expect(migrationSql).toMatch(/registration_payments_non_cash_reference_check\s+check\s*\(\s*payment_method\s*=\s*'cash'\s+or\s+\(reference_number\s+is\s+not\s+null\s+and\s+btrim\(reference_number\)\s*<>\s*''\)\s*\)/i);
+    expect(migrationSql).toMatch(/registration_payments_void_metadata_check\s+check\s*\(\s*\(voided_at\s+is\s+null\s+and\s+voided_by\s+is\s+null\s+and\s+void_reason\s+is\s+null\)\s+or\s+\(voided_at\s+is\s+not\s+null\s+and\s+voided_by\s+is\s+not\s+null\s+and\s+void_reason\s+is\s+not\s+null\s+and\s+btrim\(void_reason\)\s*<>\s*''\)\s*\)/i);
     expect(migrationSql).toMatch(/create unique index.*org_id.*lower\(btrim\(reference_number\)\).*payment_method\s*=\s*'tithely'.*voided_at\s+is\s+null/is);
   });
 

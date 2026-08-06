@@ -28,11 +28,11 @@ CREATE TABLE public.registration_payments (
   CONSTRAINT registration_payments_cash_reference_check
     CHECK (payment_method <> 'cash' OR reference_number IS NULL),
   CONSTRAINT registration_payments_non_cash_reference_check
-    CHECK (payment_method = 'cash' OR btrim(reference_number) <> ''),
+    CHECK (payment_method = 'cash' OR (reference_number IS NOT NULL AND btrim(reference_number) <> '')),
   CONSTRAINT registration_payments_void_metadata_check
     CHECK (
       (voided_at IS NULL AND voided_by IS NULL AND void_reason IS NULL)
-      OR (voided_at IS NOT NULL AND voided_by IS NOT NULL AND btrim(void_reason) <> '')
+      OR (voided_at IS NOT NULL AND voided_by IS NOT NULL AND void_reason IS NOT NULL AND btrim(void_reason) <> '')
     )
 );
 
