@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { PARKING_FIELD_IDS } from '../../config/eventPresets';
 import ParkingRegistrationTable from '../ParkingRegistrationTable';
 
@@ -9,6 +10,8 @@ const registration = (overrides = {}) => ({
     status: 'confirmed',
     payment_status: 'paid',
     payment_method: 'tithely',
+    payment_expected_amount: 50,
+    payment_recorded_total: 65,
     form_data: {
         system_first_name: 'Alex',
         system_last_name: 'Morgan',
@@ -30,7 +33,7 @@ describe('ParkingRegistrationTable', () => {
             <ParkingRegistrationTable
                 registrations={[paidRegistration]}
                 onView={vi.fn()}
-                onMarkPaid={vi.fn()}
+                onRecordPayment={vi.fn()}
                 onPrintPass={onPrintPass}
             />
         );
@@ -52,46 +55,41 @@ describe('ParkingRegistrationTable', () => {
         expect(screen.getByText('alex@example.com')).toBeInTheDocument();
         expect(screen.getByText('ABC123')).toBeInTheDocument();
         expect(screen.getByText('Blue Honda Civic')).toBeInTheDocument();
+        expect(screen.getByText('Paid — $65.00 recorded')).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Print Pass' }));
 
         expect(onPrintPass).toHaveBeenCalledWith(paidRegistration);
     });
 
-    it.each(['in_person', 'tithely'])('allows confirmed pending %s registrations to be marked paid', (payment_method) => {
-        const pendingRegistration = registration({
-            payment_status: 'pending',
-            payment_method,
-        });
-        const onMarkPaid = vi.fn();
+    it('keeps Record Payment available for paid registrations because donations are uncapped', async () => {
+        const paidRegistration = registration();
+        const onRecordPayment = vi.fn();
 
         render(
             <ParkingRegistrationTable
-                registrations={[pendingRegistration]}
+                registrations={[paidRegistration]}
                 onView={vi.fn()}
-                onMarkPaid={onMarkPaid}
+                onRecordPayment={onRecordPayment}
                 onPrintPass={vi.fn()}
             />
         );
 
-        expect(screen.queryByRole('button', { name: 'Print Pass' })).not.toBeInTheDocument();
-        expect(screen.getByText('pending')).toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: 'Record Payment' }));
 
-        fireEvent.click(screen.getByRole('button', { name: 'Mark Paid' }));
-
-        expect(onMarkPaid).toHaveBeenCalledWith(pendingRegistration);
+        expect(onRecordPayment).toHaveBeenCalledWith(paidRegistration);
     });
 
-    it('does not offer Mark Paid for ineligible registrations', () => {
+    it('does not offer Record Payment for ineligible registrations', () => {
         render(
             <ParkingRegistrationTable
-                registrations={[registration({ payment_status: 'pending', payment_method: 'other_processor' })]}
+                registrations={[registration({ status: 'waitlisted', payment_status: 'pending', payment_recorded_total: 0 })]}
                 onView={vi.fn()}
-                onMarkPaid={vi.fn()}
+                onRecordPayment={vi.fn()}
                 onPrintPass={vi.fn()}
             />
         );
 
-        expect(screen.queryByRole('button', { name: 'Mark Paid' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
     });
 });

@@ -25,29 +25,51 @@ afterEach(() => {
 });
 
 describe('validateMigrationDirectory', () => {
-  it('accepts marker migrations, one executable baseline, and a later migration', () => {
+  it('accepts markers, an executable baseline, applied forward migrations, and pending migrations', () => {
     const directory = createMigrationsDirectory();
     const marker = '20260101000000_initial_schema.sql';
     const baseline = '20260101000001_schema_baseline.sql';
+    const appliedForward = '20260101000002_tithely_payment_flow.sql';
+    const pending = '20260101000003_payment_ledger.sql';
     writeMigration(
       directory,
       marker,
       '-- Applied remotely; represented by the schema baseline in 20260101000001.',
     );
     writeMigration(directory, baseline, 'CREATE TABLE public.example (id bigint);');
-    writeMigration(
-      directory,
-      '20260101000002_tithely_payment_flow.sql',
-      '-- pending migration',
-    );
+    writeMigration(directory, appliedForward, 'ALTER TABLE public.example ADD COLUMN name text;');
+    writeMigration(directory, pending, '-- pending migration');
 
     expect(validateMigrationDirectory(directory, {
-      expectedAppliedMigrations: [marker, baseline],
-      latestAppliedVersion: '20260101000001',
+      expectedAppliedMigrations: [marker, baseline, appliedForward],
+      baselineMigration: baseline,
+      latestAppliedVersion: '20260101000002',
     })).toEqual({
       errors: [],
-      files: [marker, baseline, '20260101000002_tithely_payment_flow.sql'],
+      files: [marker, baseline, appliedForward, pending],
     });
+  });
+
+  it('rejects a comment-only applied forward migration', () => {
+    const directory = createMigrationsDirectory();
+    const marker = '20260101000000_initial_schema.sql';
+    const baseline = '20260101000001_schema_baseline.sql';
+    const appliedForward = '20260101000002_tithely_payment_flow.sql';
+    writeMigration(
+      directory,
+      marker,
+      '-- Applied remotely; represented by the schema baseline in 20260101000001.',
+    );
+    writeMigration(directory, baseline, 'CREATE TABLE public.example (id bigint);');
+    writeMigration(directory, appliedForward, '-- applied without executable SQL');
+
+    const { errors } = validateMigrationDirectory(directory, {
+      expectedAppliedMigrations: [marker, baseline, appliedForward],
+      baselineMigration: baseline,
+      latestAppliedVersion: '20260101000002',
+    });
+
+    expect(errors.join('\n')).toMatch(/applied forward migration must contain executable SQL/i);
   });
 
   it('rejects executable marker files and a comment-only baseline', () => {
