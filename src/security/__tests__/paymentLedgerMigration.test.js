@@ -36,7 +36,7 @@ describe('registration payment ledger migration', () => {
     expect(migrationSql).toMatch(/payment_expected_amount\s+numeric\(12,\s*2\)/i);
     expect(migrationSql).toMatch(/payment_recorded_total\s+numeric\(12,\s*2\)/i);
     expect(migrationSql).toMatch(/legacy_payment_paid\s+boolean/i);
-    expect(migrationSql).toMatch(/payment_method\s+in\s*\('cash',\s*'check',\s*'tithely'\)/i);
+    expect(migrationSql).toMatch(/method\s+in\s*\('cash',\s*'check',\s*'tithely'\)/i);
     expect(migrationSql).toMatch(/amount\s+numeric\(12,\s*2\)\s+not null check\s*\(\s*amount\s*>\s*0\s+and\s+amount\s*<>\s*'nan'::numeric\s+and\s+amount\s*<>\s*'infinity'::numeric\s+and\s+amount\s*<>\s*'-infinity'::numeric\s*\)/i);
     expect(migrationSql).toMatch(/registration_id\s+uuid\s+not null references public\.registrations\(id\) on delete restrict/i);
     expect(migrationSql).toMatch(/org_id\s+uuid\s+not null references public\.organizations\(id\) on delete restrict/i);
@@ -44,9 +44,9 @@ describe('registration payment ledger migration', () => {
     expect(migrationSql).toMatch(/constraint registration_payments_registration_org_fkey\s+foreign key\s*\(\s*registration_id\s*,\s*org_id\s*\)\s+references public\.registrations\s*\(\s*id\s*,\s*org_id\s*\)\s+on delete restrict/i);
     expect(migrationSql).toMatch(/created_at\s+timestamptz\s+not null default now\(\)/i);
     expect(migrationSql).toMatch(/registration_payments_cash_reference_check/i);
-    expect(migrationSql).toMatch(/registration_payments_non_cash_reference_check\s+check\s*\(\s*payment_method\s*=\s*'cash'\s+or\s+\(reference_number\s+is\s+not\s+null\s+and\s+btrim\(reference_number\)\s*<>\s*''\)\s*\)/i);
+    expect(migrationSql).toMatch(/registration_payments_non_cash_reference_check\s+check\s*\(\s*method\s*=\s*'cash'\s+or\s+\(reference_number\s+is\s+not\s+null\s+and\s+btrim\(reference_number\)\s*<>\s*''\)\s*\)/i);
     expect(migrationSql).toMatch(/registration_payments_void_metadata_check\s+check\s*\(\s*\(voided_at\s+is\s+null\s+and\s+voided_by\s+is\s+null\s+and\s+void_reason\s+is\s+null\)\s+or\s+\(voided_at\s+is\s+not\s+null\s+and\s+voided_by\s+is\s+not\s+null\s+and\s+void_reason\s+is\s+not\s+null\s+and\s+btrim\(void_reason\)\s*<>\s*''\)\s*\)/i);
-    expect(migrationSql).toMatch(/create unique index.*org_id.*lower\(btrim\(reference_number\)\).*payment_method\s*=\s*'tithely'.*voided_at\s+is\s+null/is);
+    expect(migrationSql).toMatch(/create unique index.*org_id.*lower\(btrim\(reference_number\)\).*method\s*=\s*'tithely'.*voided_at\s+is\s+null/is);
   });
 
   it('initializes and protects payment projections through scoped trigger contracts', () => {
@@ -93,6 +93,9 @@ describe('registration payment ledger migration', () => {
     const refresh = functionSql('private.refresh_registration_payment_projection(');
 
     expect(refresh).toMatch(/security definer\s+set search_path to ''/i);
+    expect(refresh).toMatch(/select registrations\.\*\s+into v_registration[\s\S]*for update of registrations/i);
+    expect(refresh).toMatch(/select events\.payment_enabled\s+into v_payment_enabled[\s\S]*where events\.id\s*=\s*v_registration\.event_id/i);
+    expect(refresh).not.toMatch(/into v_registration\s*,\s*v_payment_enabled/i);
     expect(refresh).toMatch(/legacy_payment_paid[\s\S]*v_next_payment_status\s*:=\s*'paid'/i);
     expect(refresh).toMatch(/v_recorded_total\s*=\s*0[\s\S]*v_next_payment_status\s*:=\s*'pending'/i);
     expect(refresh).toMatch(/payment_expected_amount\s+is\s+null[\s\S]*v_next_payment_status\s*:=\s*'paid'/i);
@@ -115,10 +118,14 @@ describe('registration payment ledger migration', () => {
 
     expect(record).toMatch(/security definer\s+set search_path to ''/i);
     expect(record).toMatch(/if not private\.is_org_member\(p_org_id\)/i);
+    expect(record).toMatch(/select registrations\.\*\s+into v_registration[\s\S]*for update of registrations/i);
+    expect(record).toMatch(/select events\.payment_enabled\s+into v_payment_enabled[\s\S]*where events\.id\s*=\s*v_registration\.event_id/i);
+    expect(record).not.toMatch(/into v_registration\s*,\s*v_payment_enabled/i);
     expect(record).toMatch(/join public\.events as events\s+on events\.id\s*=\s*registrations\.event_id[\s\S]*where registrations\.id\s*=\s*p_registration_id\s+and registrations\.org_id\s*=\s*p_org_id\s+and events\.org_id\s*=\s*p_org_id/i);
     expect(record).toMatch(/for update of registrations/i);
     expect(record).toMatch(/if v_registration\.status\s*<>\s*'confirmed'\s+or not v_payment_enabled\s+then\s+raise exception 'registration is not eligible to receive a payment'/i);
-    expect(record).toMatch(/v_payment_method\s*:=\s*pg_catalog\.lower\(pg_catalog\.btrim\(p_payment_method\)\)/i);
+    expect(record).toMatch(/p_method\s+text/i);
+    expect(record).toMatch(/v_payment_method\s*:=\s*pg_catalog\.lower\(pg_catalog\.btrim\(p_method\)\)/i);
     expect(record).toMatch(/v_reference_number\s*:=\s*nullif\(pg_catalog\.btrim\(p_reference_number\),\s*''\)/i);
     expect(record).toMatch(/p_amount\s+is\s+null\s+or\s+p_amount\s*<=\s*0\s+or\s+p_amount\s*=\s*'nan'::numeric\s+or\s+p_amount\s*=\s*'infinity'::numeric\s+or\s+p_amount\s*=\s*'-infinity'::numeric/i);
     expect(record).toMatch(/v_amount\s*:=\s*pg_catalog\.round\(p_amount,\s*2\)[\s\S]*if v_amount\s*<=\s*0/i);
@@ -127,7 +134,7 @@ describe('registration payment ledger migration', () => {
     expect(record).toMatch(/tithe\.ly payments require a reference number/i);
     expect(record).toMatch(/payment date cannot be in the future/i);
     expect(record).toMatch(/when unique_violation[\s\S]*transaction reference already exists/i);
-    expect(record).toMatch(/recorded_by[\s\S]*\(select auth\.uid\(\)\)/i);
+    expect(record).toMatch(/created_by[\s\S]*\(select auth\.uid\(\)\)/i);
     expect(record).not.toMatch(/legacy paid registrations cannot receive ledger payments/i);
     expect(record).not.toMatch(/v_recorded_total\s*\+\s*v_amount\s*>\s*v_registration\.payment_expected_amount/i);
     expect(record).not.toMatch(/payment would exceed the expected amount/i);
@@ -139,6 +146,7 @@ describe('registration payment ledger migration', () => {
 
     expect(voidPayment).toMatch(/security definer\s+set search_path to ''/i);
     expect(voidPayment).toMatch(/if not private\.is_org_member\(p_org_id\)/i);
+    expect(voidPayment).toMatch(/p_void_reason\s+text/i);
     expect(voidPayment).toMatch(/for update of registrations/i);
     expect(voidPayment).toMatch(/where registration_payments\.id\s*=\s*p_payment_id\s+and registration_payments\.registration_id\s*=\s*p_registration_id\s+and registration_payments\.org_id\s*=\s*p_org_id/i);
     expect(voidPayment).toMatch(/for update of registration_payments/i);

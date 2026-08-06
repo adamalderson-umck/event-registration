@@ -14,7 +14,7 @@ CREATE TABLE public.registration_payments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   registration_id uuid NOT NULL REFERENCES public.registrations(id) ON DELETE RESTRICT,
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,
-  payment_method text NOT NULL CHECK (payment_method IN ('cash', 'check', 'tithely')),
+  method text NOT NULL CHECK (method IN ('cash', 'check', 'tithely')),
   amount numeric(12, 2) NOT NULL CHECK (
     amount > 0
     AND amount <> 'NaN'::numeric
@@ -23,7 +23,7 @@ CREATE TABLE public.registration_payments (
   ),
   payment_date date NOT NULL CHECK (payment_date <= CURRENT_DATE),
   reference_number text,
-  recorded_by uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
+  created_by uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT now(),
   voided_at timestamptz,
   voided_by uuid REFERENCES auth.users(id) ON DELETE RESTRICT,
@@ -32,9 +32,9 @@ CREATE TABLE public.registration_payments (
     FOREIGN KEY (registration_id, org_id)
     REFERENCES public.registrations (id, org_id) ON DELETE RESTRICT,
   CONSTRAINT registration_payments_cash_reference_check
-    CHECK (payment_method <> 'cash' OR reference_number IS NULL),
+    CHECK (method <> 'cash' OR reference_number IS NULL),
   CONSTRAINT registration_payments_non_cash_reference_check
-    CHECK (payment_method = 'cash' OR (reference_number IS NOT NULL AND btrim(reference_number) <> '')),
+    CHECK (method = 'cash' OR (reference_number IS NOT NULL AND btrim(reference_number) <> '')),
   CONSTRAINT registration_payments_void_metadata_check
     CHECK (
       (voided_at IS NULL AND voided_by IS NULL AND void_reason IS NULL)
@@ -44,7 +44,7 @@ CREATE TABLE public.registration_payments (
 
 CREATE UNIQUE INDEX registration_payments_active_tithely_reference_org_key
   ON public.registration_payments (org_id, lower(btrim(reference_number)))
-  WHERE payment_method = 'tithely' AND voided_at IS NULL;
+  WHERE method = 'tithely' AND voided_at IS NULL;
 
 ALTER TABLE public.registration_payments ENABLE ROW LEVEL SECURITY;
 
@@ -157,8 +157,8 @@ DECLARE
   v_recorded_total numeric(12, 2);
   v_next_payment_status text;
 BEGIN
-  SELECT registrations.*, events.payment_enabled
-  INTO v_registration, v_payment_enabled
+  SELECT registrations.*
+  INTO v_registration
   FROM public.registrations AS registrations
   JOIN public.events AS events
     ON events.id = registrations.event_id
@@ -170,6 +170,12 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Registration not found';
   END IF;
+
+  SELECT events.payment_enabled
+  INTO v_payment_enabled
+  FROM public.events AS events
+  WHERE events.id = v_registration.event_id
+    AND events.org_id = p_org_id;
 
   SELECT COALESCE(SUM(registration_payments.amount), 0)::numeric(12, 2)
   INTO v_recorded_total
@@ -245,7 +251,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.record_registration_payment(
   p_registration_id uuid,
   p_org_id uuid,
-  p_payment_method text,
+  p_method text,
   p_amount numeric,
   p_payment_date date,
   p_reference_number text DEFAULT NULL
@@ -266,7 +272,7 @@ BEGIN
     RAISE EXCEPTION 'Not authorized to manage this organization';
   END IF;
 
-  v_payment_method := pg_catalog.lower(pg_catalog.btrim(p_payment_method));
+  v_payment_method := pg_catalog.lower(pg_catalog.btrim(p_method));
   v_reference_number := NULLIF(pg_catalog.btrim(p_reference_number), '');
 
   IF v_payment_method IS NULL OR v_payment_method NOT IN ('cash', 'check', 'tithely') THEN
@@ -299,8 +305,8 @@ BEGIN
     RAISE EXCEPTION 'Tithe.ly payments require a reference number';
   END IF;
 
-  SELECT registrations.*, events.payment_enabled
-  INTO v_registration, v_payment_enabled
+  SELECT registrations.*
+  INTO v_registration
   FROM public.registrations AS registrations
   JOIN public.events AS events
     ON events.id = registrations.event_id
@@ -313,6 +319,12 @@ BEGIN
     RAISE EXCEPTION 'Registration not found';
   END IF;
 
+  SELECT events.payment_enabled
+  INTO v_payment_enabled
+  FROM public.events AS events
+  WHERE events.id = v_registration.event_id
+    AND events.org_id = p_org_id;
+
   IF v_registration.status <> 'confirmed' OR NOT v_payment_enabled THEN
     RAISE EXCEPTION 'Registration is not eligible to receive a payment';
   END IF;
@@ -321,11 +333,11 @@ BEGIN
     INSERT INTO public.registration_payments (
       registration_id,
       org_id,
-      payment_method,
+      method,
       amount,
       payment_date,
       reference_number,
-      recorded_by
+      created_by
     )
     VALUES (
       p_registration_id,
@@ -353,7 +365,7 @@ CREATE OR REPLACE FUNCTION public.void_registration_payment(
   p_payment_id uuid,
   p_registration_id uuid,
   p_org_id uuid,
-  p_reason text
+  p_void_reason text
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -369,7 +381,7 @@ BEGIN
     RAISE EXCEPTION 'Not authorized to manage this organization';
   END IF;
 
-  v_reason := NULLIF(pg_catalog.btrim(p_reason), '');
+  v_reason := NULLIF(pg_catalog.btrim(p_void_reason), '');
   IF v_reason IS NULL THEN
     RAISE EXCEPTION 'Void reason is required';
   END IF;
