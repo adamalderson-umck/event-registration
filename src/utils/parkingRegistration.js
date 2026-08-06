@@ -37,7 +37,7 @@ export function getParkingPassStatus(registration) {
         return PARKING_PASS_STATUS.VALID;
     }
 
-    if (registration?.payment_status === 'pending') {
+    if (registration?.payment_status === 'pending' || registration?.payment_status === 'partial') {
         return PARKING_PASS_STATUS.PAYMENT_PENDING;
     }
 

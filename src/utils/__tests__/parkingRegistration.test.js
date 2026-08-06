@@ -35,6 +35,7 @@ describe('parking registration helpers', () => {
     it.each([
         ['confirmed', 'paid', PARKING_PASS_STATUS.VALID],
         ['confirmed', 'pending', PARKING_PASS_STATUS.PAYMENT_PENDING],
+        ['confirmed', 'partial', PARKING_PASS_STATUS.PAYMENT_PENDING],
         ['confirmed', 'failed', PARKING_PASS_STATUS.INVALID],
         ['waitlisted', 'paid', PARKING_PASS_STATUS.WAITLISTED],
         ['waitlisted', 'pending', PARKING_PASS_STATUS.WAITLISTED],
@@ -47,5 +48,6 @@ describe('parking registration helpers', () => {
     it('allows printing only valid parking passes', () => {
         expect(canPrintParkingPass(registration())).toBe(true);
         expect(canPrintParkingPass(registration({ payment_status: 'pending' }))).toBe(false);
+        expect(canPrintParkingPass(registration({ payment_status: 'partial' }))).toBe(false);
     });
 });
