@@ -8,6 +8,11 @@ const migrationPath = path.join(migrationsDir, migrationName);
 const migrationSql = fs.existsSync(migrationPath)
   ? fs.readFileSync(migrationPath, 'utf8')
   : '';
+const allMigrationSql = fs.readdirSync(migrationsDir)
+  .filter((name) => name.endsWith('.sql'))
+  .sort()
+  .map((name) => fs.readFileSync(path.join(migrationsDir, name), 'utf8'))
+  .join('\n');
 
 function functionSql(name) {
   const start = migrationSql.indexOf(`CREATE OR REPLACE FUNCTION ${name}`);
@@ -87,6 +92,12 @@ describe('registration payment ledger migration', () => {
     expect(migrationSql).toMatch(/revoke all on table public\.registration_payments from public, anon, authenticated/i);
     expect(migrationSql).toMatch(/grant select on table public\.registration_payments to authenticated/i);
     expect(migrationSql).not.toMatch(/grant\s+(?:insert|update|delete|all)\s+on table public\.registration_payments\s+to\s+authenticated/i);
+  });
+
+  it('leaves only one PostgREST relationship from registrations to payment rows', () => {
+    expect(allMigrationSql).toMatch(
+      /alter table public\.registration_payments\s+drop constraint if exists registration_payments_registration_id_fkey/i,
+    );
   });
 
   it('derives statuses without overpayment and preserves paid legacy records', () => {
