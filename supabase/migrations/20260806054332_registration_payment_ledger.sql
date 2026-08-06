@@ -373,7 +373,6 @@ SECURITY DEFINER
 SET search_path TO ''
 AS $$
 DECLARE
-  v_registration public.registrations%ROWTYPE;
   v_payment public.registration_payments%ROWTYPE;
   v_reason text;
 BEGIN
@@ -387,8 +386,7 @@ BEGIN
   END IF;
 
   -- Match the record RPC's lock order: registration before ledger row.
-  SELECT registrations.*
-  INTO v_registration
+  PERFORM 1
   FROM public.registrations AS registrations
   WHERE registrations.id = p_registration_id
     AND registrations.org_id = p_org_id

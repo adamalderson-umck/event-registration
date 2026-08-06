@@ -147,7 +147,7 @@ describe('registration payment ledger migration', () => {
     expect(voidPayment).toMatch(/security definer\s+set search_path to ''/i);
     expect(voidPayment).toMatch(/if not private\.is_org_member\(p_org_id\)/i);
     expect(voidPayment).toMatch(/p_void_reason\s+text/i);
-    expect(voidPayment).toMatch(/for update of registrations/i);
+    expect(voidPayment).toMatch(/perform 1\s+from public\.registrations as registrations[\s\S]*for update of registrations/i);
     expect(voidPayment).toMatch(/where registration_payments\.id\s*=\s*p_payment_id\s+and registration_payments\.registration_id\s*=\s*p_registration_id\s+and registration_payments\.org_id\s*=\s*p_org_id/i);
     expect(voidPayment).toMatch(/for update of registration_payments/i);
     expect(voidPayment).toMatch(/void reason is required/i);
