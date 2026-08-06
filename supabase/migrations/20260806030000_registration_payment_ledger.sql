@@ -255,7 +255,6 @@ DECLARE
   v_payment_method text;
   v_reference_number text;
   v_amount numeric(12, 2);
-  v_recorded_total numeric(12, 2);
 BEGIN
   IF NOT private.is_org_member(p_org_id) THEN
     RAISE EXCEPTION 'Not authorized to manage this organization';
@@ -310,22 +309,6 @@ BEGIN
 
   IF v_registration.status <> 'confirmed' OR NOT v_payment_enabled THEN
     RAISE EXCEPTION 'Registration is not eligible to receive a payment';
-  END IF;
-
-  IF v_registration.legacy_payment_paid THEN
-    RAISE EXCEPTION 'Legacy paid registrations cannot receive ledger payments';
-  END IF;
-
-  SELECT COALESCE(SUM(registration_payments.amount), 0)::numeric(12, 2)
-  INTO v_recorded_total
-  FROM public.registration_payments AS registration_payments
-  WHERE registration_payments.registration_id = p_registration_id
-    AND registration_payments.org_id = p_org_id
-    AND registration_payments.voided_at IS NULL;
-
-  IF v_registration.payment_expected_amount IS NOT NULL
-    AND v_recorded_total + v_amount > v_registration.payment_expected_amount THEN
-    RAISE EXCEPTION 'Payment would exceed the expected amount';
   END IF;
 
   BEGIN
