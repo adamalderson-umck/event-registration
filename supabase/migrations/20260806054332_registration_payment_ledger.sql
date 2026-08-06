@@ -435,3 +435,4 @@ GRANT EXECUTE ON FUNCTION public.record_registration_payment(uuid, uuid, text, n
 GRANT EXECUTE ON FUNCTION public.void_registration_payment(uuid, uuid, uuid, text) TO authenticated;
 
 DROP FUNCTION IF EXISTS public.mark_registration_paid(uuid, uuid);
+DROP FUNCTION IF EXISTS public.update_payment_status(uuid, text, text, jsonb);

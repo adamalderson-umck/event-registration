@@ -167,5 +167,6 @@ describe('registration payment ledger migration', () => {
     expect(migrationSql).toMatch(/grant execute on function public\.record_registration_payment[\s\S]*to authenticated/i);
     expect(migrationSql).toMatch(/grant execute on function public\.void_registration_payment[\s\S]*to authenticated/i);
     expect(migrationSql).toMatch(/drop function if exists public\.mark_registration_paid\(uuid, uuid\)/i);
+    expect(migrationSql).toMatch(/drop function if exists public\.update_payment_status\(uuid, text, text, jsonb\)/i);
   });
 });
