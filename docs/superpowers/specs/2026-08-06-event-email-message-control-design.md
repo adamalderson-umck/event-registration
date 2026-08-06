@@ -6,26 +6,30 @@
 
 ## Purpose
 
-Bring the deployed registration-confirmation and event-reminder Edge Functions under source control, let each event creator customize the plain-text body of those two emails, and make email delivery authenticated, auditable, and resistant to duplicate sends.
+Bring every deployed Edge Function under source control, let each event creator customize the plain-text body of registration-confirmation and event-reminder emails, and make those two email flows authenticated, auditable, and resistant to duplicate sends.
 
 Parking passes remain admin-produced and admin-distributed. The system must not invent pickup, printing, timing, location, or notification instructions. Event creators own all such process language through the event's customizable messages.
 
 ## Existing State
 
-Supabase project `eonpdgufuewpqdjpshbc` currently has two active functions whose source is absent from `origin/main`:
+Supabase project `eonpdgufuewpqdjpshbc` currently has eight active functions. Three are represented in `origin/main`: `resolve-member-email`, `send-organizer-invite`, and `submit-registration`. Five deployed functions are absent:
 
+- `capture-signer-ip`, deployed version 4, bundle hash `7204504bd31ed1bcec5688a3d787705804dd783ae9d273ab150455d799da0e01`.
+- `send-event-reminders`, deployed version 2, bundle hash `f30b5437e47f375a2933e59de9c0fc922e4d2a22126781af37547ef49727ac0e`.
 - `send-registration-email`, deployed version 7, bundle hash `ade3a9d9e03ac124dd386cf1d44b599d6f7ad15fe48668ca030a2657d954b397`.
-- `send-event-reminders`, deployed version 2, bundle hash `e439e792d708bb5bdf6910a8a7b363716773731016496f39bd55a8852ba25cd9`.
+- `verify-cancel-token`, deployed version 3, bundle hash `2ceefd0a228bbc5179fd97267af88149058b3a0e9af6950e1365458c8a1ffa40`.
+- `weekly-digest`, deployed version 2, bundle hash `e439e792d708bb5bdf6910a8a7b363716773731016496f39bd55a8852ba25cd9`.
 
 The registration function sends initial confirmation or waitlist email, cancellation email, waitlist-promotion email, and optional organizer notification. Its database trigger currently invokes it with the public anonymous key, while the function is deployed without JWT verification.
 
 The reminder function runs hourly, finds active events whose one configured reminder is due, and emails confirmed registrants. The existing cron invocation uses the service-role key, but the function is also deployed without JWT verification. Its SMTP setup does not retrieve the organization's Vault-backed password in the same way as the other current email functions.
 
-Both functions construct their email HTML internally. Neither has repository-owned focused tests.
+The two email functions construct their email HTML internally. Neither has repository-owned focused tests.
 
 ## Goals
 
-- Recover both deployed function sources into `supabase/functions/` and make Git the deployment authority.
+- Recover all five missing deployed function sources into `supabase/functions/` and make Git the deployment authority for every active function.
+- Preserve `capture-signer-ip`, `verify-cancel-token`, and `weekly-digest` byte-for-byte as baseline recoveries; do not behaviorally modify or redeploy them in this project.
 - Give every event independent plain-text confirmation and reminder message fields.
 - Keep email subjects, status facts, event facts, registration details, and cancellation links system-controlled.
 - Require complete message configuration before an affected event becomes active.
@@ -48,6 +52,7 @@ Both functions construct their email HTML internally. Neither has repository-own
 - Changing registration capacity, waitlist promotion, cancellation, payment verification, or parking-pass validity rules.
 - Adding an administrator email-delivery dashboard or a general-purpose resend workflow.
 - Customizing waitlist, cancellation, waitlist-promotion, or organizer-notification copy in this project.
+- Behavior changes or production redeployment for the three baseline-only recoveries: `capture-signer-ip`, `verify-cancel-token`, and `weekly-digest`.
 
 ## Event Data Model
 
@@ -106,8 +111,10 @@ The Event Editor adds two plain-text textareas:
 
 ### Reminder Email Message
 
-- Available when reminders are configured.
-- Enabling a reminder supplies the reminder starter only when the field is currently blank; toggling reminder settings never overwrites authored text.
+- Editable only while `reminder_hours_before` is configured.
+- When no reminder time is configured, the control is disabled and explains that a reminder time must be selected before its message can be edited.
+- Enabling a reminder supplies the reminder starter only when the field is currently blank.
+- Disabling reminders preserves existing authored text but immediately disables editing; re-enabling restores the preserved text without overwriting it.
 - Events may save a blank draft but cannot become active with a configured reminder until this field is nonblank.
 - Helper text tells creators that the system adds event date, time, location, calendar link, and parking payment facts.
 
@@ -117,7 +124,7 @@ The existing quick Draft/Active selector and the full Event Editor enforce the s
 
 ## Frontend Data Flow
 
-`EventEditor.jsx` loads and edits `confirmationMessage` and `reminderMessage`. The parking preset supplies its confirmation starter. Enabling reminders supplies the reminder starter without overwriting nonblank text.
+`EventEditor.jsx` loads and edits `confirmationMessage` and `reminderMessage`. The parking preset supplies its confirmation starter. Reminder state controls whether `reminderMessage` is editable. Enabling reminders supplies the reminder starter without overwriting nonblank text; disabling reminders preserves the value in read-only state.
 
 `eventPayload.js` serializes the React fields as `confirmation_message` and `reminder_message`. Its active-event validation rejects:
 
@@ -190,7 +197,7 @@ Custom messages remain text at rest. The functions:
 
 Event title, location, form labels, form answers, payment labels, URLs, and all other dynamic values are escaped or constructed through narrow URL APIs before insertion into HTML. No administrator-authored HTML is executed.
 
-Function dependency versions are pinned exactly in committed Deno configuration rather than using floating major-version imports.
+The two modified email functions pin dependency versions exactly in committed Deno configuration rather than using floating major-version imports. Baseline-only recovered functions preserve their downloaded imports unchanged in this project.
 
 ## Invocation Security
 
@@ -202,9 +209,13 @@ The reminder cron retains its protected service-role authorization. The registra
 
 Secrets are read from Edge Function environment variables or the existing Vault-backed SMTP RPC. Service-role and SMTP credentials never enter response bodies or logs.
 
-## Function Boundaries
+## Function Recovery and Boundaries
 
-Both deployed bundles are first recovered as repository evidence, then reorganized into testable units without changing unrelated behavior:
+All five missing deployed bundles are downloaded through the Supabase CLI into their canonical `supabase/functions/<slug>/` paths. Recovery records each live version, bundle hash, entrypoint, and JWT-verification setting and compares the downloaded content before any behavior change. `supabase/config.toml` records the current configuration for every active function; only the two email functions receive approved configuration changes.
+
+The baseline-only `capture-signer-ip`, `verify-cancel-token`, and `weekly-digest` functions remain unchanged after recovery and are not deployed by this project. Keeping baseline recovery separate from behavioral edits makes their provenance reviewable and prevents an unrelated redeploy.
+
+The recovered registration and reminder bundles are then reorganized into testable units without changing unrelated behavior:
 
 - A shared safe-text and email-shell module owns escaping and plain-text rendering.
 - A shared SMTP module loads the organization's Vault-backed secret and sends HTML alternatives.
@@ -274,7 +285,9 @@ Existing standard events without reminders remain unchanged. Existing active par
 - Run focused Deno tests for both functions and shared modules.
 - Run the full Vitest suite serially with `npx vitest run --dir src --maxWorkers=1`.
 - Run lint and the production build.
-- Confirm no function source, test, or configuration remains outside the repository-owned paths.
+- Compare the current live inventory with repository function directories and require an exact slug match for all eight active functions.
+- Verify the three baseline-only recoveries against freshly read live versions, hashes, and downloaded source; do not deploy them.
+- Confirm no active function source, test, or configuration remains outside the repository-owned paths.
 - Deploy schema, application, and functions in dependency order.
 - Read back deployed function versions and hashes and compare them with the reviewed bundles.
 - With an explicitly approved test recipient, send one controlled confirmation and one controlled reminder and inspect content, links, delivery states, payment freshness, and duplicate suppression.
@@ -282,18 +295,22 @@ Existing standard events without reminders remain unchanged. Existing active par
 ## Rollout Order
 
 1. Implement on a clean branch based on `origin/main`.
-2. Apply the additive/backfill/constraint migration.
-3. Deploy the application editor and validation changes.
-4. Deploy the repository-controlled registration function.
-5. Deploy the repository-controlled reminder function.
-6. Read back function metadata and source hashes.
-7. Run controlled end-to-end email verification using only an approved test address.
-8. Publish a ready, non-draft PR when authorized and leave it unmerged until explicit merge approval.
+2. Download and verify all five missing function baselines in a recovery-only commit.
+3. Apply the additive/backfill/constraint migration.
+4. Deploy the application editor and validation changes.
+5. Deploy the repository-controlled registration function.
+6. Deploy the repository-controlled reminder function.
+7. Do not deploy the other three recovered functions.
+8. Read back the complete function inventory, updated email-function metadata, and source hashes.
+9. Run controlled end-to-end email verification using only an approved test address.
+10. Publish a ready, non-draft PR when authorized and leave it unmerged until explicit merge approval.
 
 ## Success Criteria
 
-- Both production email functions have reviewed, tested, repository-owned source.
-- Every event can customize confirmation and reminder body text independently.
+- Every active production Edge Function has repository-owned source, and the three baseline-only recoveries remain behaviorally unchanged.
+- Both production email functions have reviewed and tested repository-owned source.
+- Every event can customize its confirmation body, and every reminder-enabled event can customize its reminder body independently.
+- Reminder text cannot be edited unless a reminder time is configured; disabling a reminder preserves but locks the existing text.
 - Active parking and reminder-enabled events cannot omit their required message.
 - Subjects and factual system fields remain consistent and trustworthy.
 - Parking recipients see their selected payment method and current payment status in confirmations and reminders.
