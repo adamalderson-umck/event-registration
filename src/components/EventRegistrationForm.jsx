@@ -110,6 +110,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         if (turnstileWidgetId.current !== null) return; // already mounted
         turnstileWidgetId.current = window.turnstile.render(turnstileRef.current, {
             sitekey: TURNSTILE_SITE_KEY,
+            action: 'event_registration',
             callback: (token) => setTurnstileToken(token),
             'expired-callback': () => setTurnstileToken(null),
             'error-callback': () => setTurnstileToken(null),
@@ -129,7 +130,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         return () => {
             if (script) script.removeEventListener('load', tryMount);
         };
-    }, [TURNSTILE_SITE_KEY, mountTurnstile, currentPage]);
+    }, [TURNSTILE_SITE_KEY, mountTurnstile, currentPage, loading]);
 
     // --- Multi-page and condition helpers ---
     const pages = event ? splitIntoPages(event.form_fields || []) : [];
@@ -151,11 +152,6 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 return next;
             });
         }
-    };
-
-    const findRegistrantEmail = (fields, data) => {
-        const emailField = (fields || []).find((f) => f.id === 'system_email') || (fields || []).find((f) => f.type === 'email');
-        return emailField ? data[emailField.id] || '' : '';
     };
 
     const validate = (fieldsToValidate = null) => {
@@ -290,8 +286,13 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         if (!validate()) return;
 
         // CAPTCHA check — only if Turnstile is configured
-        if (TURNSTILE_SITE_KEY && !turnstileToken) {
-            setErrors((prev) => ({ ...prev, _form: 'Please complete the CAPTCHA challenge.' }));
+        if (!TURNSTILE_SITE_KEY || !turnstileToken) {
+            setErrors((prev) => ({
+                ...prev,
+                _form: TURNSTILE_SITE_KEY
+                    ? 'Please complete the CAPTCHA challenge.'
+                    : 'Security verification is unavailable. Please try again later.',
+            }));
             return;
         }
 
@@ -306,64 +307,45 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 }
             }
 
-            const registrationData = {
-                event_id: eventId,
-                org_id: orgId,
-                form_data: cleanFormData,
-                status: 'pending', // Trigger will set to confirmed/waitlisted
-                payment_status: event.payment_enabled ? 'pending' : 'not_required',
-                payment_method: event.payment_enabled ? paymentMethod : null,
-            };
-
-            // Build signature_records[] for all waivers
+            // Send only waiver decisions and signature input. The trusted server
+            // derives waiver metadata, timestamps, IP address, and user agent.
+            let signatureRecords = [];
             if (Array.isArray(event.waivers) && event.waivers.length > 0) {
-                let ipAddress = 'unknown';
-                try {
-                    const response = await supabase.functions.invoke('capture-signer-ip');
-                    if (response.data?.ip) ipAddress = response.data.ip;
-                } catch (err) {
-                    console.warn('Could not capture IP:', err);
-                }
-
-                registrationData.signature_records = event.waivers.map((waiver) => {
+                signatureRecords = event.waivers.map((waiver) => {
                     const sig = signaturesMap[waiver.id] || {};
                     if (sig.declined) {
                         return {
                             waiverId: waiver.id,
-                            waiverTitle: waiver.title,
-                            waiverContentHash: waiver.contentHash || '',
-                            signed: false,
                             declined: true,
-                            declinedAt: new Date().toISOString(),
-                            signerName: sig.signerName?.trim() || '',
-                            signerEmail: findRegistrantEmail(event.form_fields, formData),
-                            ipAddress,
-                            userAgent: navigator.userAgent,
                         };
                     }
-                    return {
+                    const decision = {
                         waiverId: waiver.id,
-                        waiverTitle: waiver.title,
-                        waiverContentHash: waiver.contentHash || '',
-                        signed: true,
-                        signedAt: new Date().toISOString(),
+                        declined: false,
                         signerName: sig.signerName?.trim() || '',
-                        signerEmail: findRegistrantEmail(event.form_fields, formData),
                         signatureMethod: sig.signatureMethod || 'draw',
-                        signatureData: sig.signatureMethod === 'draw' ? sig.signatureData : null,
-                        signatureFont: sig.signatureMethod === 'type' ? sig.signatureFont : null,
                         consentToESign: true,
-                        ipAddress,
-                        userAgent: navigator.userAgent,
                     };
+                    if (decision.signatureMethod === 'draw') {
+                        decision.signatureData = sig.signatureData;
+                    }
+                    return decision;
                 });
             }
 
-            const { data: created, error: insertError } = await supabase
-                .from('registrations')
-                .insert(registrationData)
-                .select('id, status, payment_status, payment_method')
-                .single();
+            const { data: created, error: insertError } = await supabase.functions.invoke(
+                'submit-registration',
+                {
+                    body: {
+                        turnstileToken,
+                        eventId,
+                        orgId,
+                        formData: cleanFormData,
+                        paymentMethod: event.payment_enabled ? paymentMethod : null,
+                        signatureRecords,
+                    },
+                }
+            );
 
             if (insertError) throw insertError;
             if (!created) throw new Error('Registration was created without a returned record.');
@@ -375,6 +357,10 @@ export default function EventRegistrationForm({ eventId, orgId }) {
             setPhase(requiresTithelyPayment ? 'payment' : 'success');
         } catch (err) {
             console.error('Error submitting registration:', err);
+            setTurnstileToken(null);
+            if (turnstileWidgetId.current !== null) {
+                window.turnstile?.reset(turnstileWidgetId.current);
+            }
             setErrors({ _form: 'Failed to submit registration. Please try again.' });
         } finally {
             setSubmitting(false);
@@ -389,6 +375,10 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         setCurrentPage(0);
         setSignaturesMap({});
         setSignaturesErrors({});
+        setTurnstileToken(null);
+        if (turnstileWidgetId.current !== null) {
+            window.turnstile?.reset(turnstileWidgetId.current);
+        }
         setPaymentMethod(availablePaymentMethods.length === 1 ? availablePaymentMethods[0] : '');
     };
 
