@@ -36,7 +36,7 @@ A dynamic, multi-tenant Event Registration System with secure forms, waiver sign
 
 ## Supabase Development
 
-Docker or another Docker-compatible runtime is required for the local Supabase stack. Install dependencies, start the disposable local services, replay the full migration history without seed data, and inspect local history with:
+Docker or another Docker-compatible runtime is required for the local Supabase stack. Install dependencies, start the disposable local services, rebuild the database from the migration ledger without seed data, and inspect local history with:
 
 ```powershell
 npm install
@@ -52,9 +52,11 @@ npx supabase migration new add_registration_deadline
 npm run check:migrations
 ```
 
-Never hand-author a migration timestamp. The `supabase/.temp` directory is uncommitted local CLI state. `db reset --local` deletes and recreates only the disposable local database.
+Never hand-author a migration timestamp. The first 35 applied versions are timestamp markers because their original SQL is not an authoritative replay source. Migration `20260806001553` is the reviewed schema baseline that recreates the current application database; later files are ordinary forward migrations. Do not add executable SQL to a marker or replace the baseline with a marker.
 
-The reconstructed webhook migration stores inert local Vault placeholders named `project_url` and `anon_key`. To test webhooks locally, use local Studio to replace those values with the API URL and anon key printed by `npx supabase status`. Never commit either value.
+The `supabase/.temp` directory is uncommitted local CLI state. `db reset --local` deletes and recreates only the disposable local database.
+
+The baseline stores inert local Vault placeholders named `project_url` and `anon_key`. To test webhooks locally, use local Studio to replace those values with the API URL and anon key printed by `npx supabase status`. Never commit either value.
 
 ### Linked migration gate
 

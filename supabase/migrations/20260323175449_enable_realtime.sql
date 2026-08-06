@@ -1,5 +1,1 @@
-
--- Enable Realtime on tables that need live updates
-ALTER PUBLICATION supabase_realtime ADD TABLE events;
-ALTER PUBLICATION supabase_realtime ADD TABLE registrations;
-;
+-- Applied remotely; represented by the schema baseline in 20260806001553.

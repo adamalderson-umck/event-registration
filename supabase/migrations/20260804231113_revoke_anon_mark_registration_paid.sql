@@ -1,2 +1,1 @@
-REVOKE ALL ON FUNCTION public.mark_registration_paid(uuid, uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.mark_registration_paid(uuid, uuid) TO authenticated;;
+-- Applied remotely; represented by the schema baseline in 20260806001553.

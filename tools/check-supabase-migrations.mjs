@@ -48,6 +48,13 @@ const PROJECT_URL = /https:\/\/[a-z0-9]{20}\.supabase\.co\b/;
 const JWT_SHAPED_VALUE = /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/;
 const SUPABASE_SECRET_KEY = /sb_secret_/;
 
+function containsExecutableSql(sql) {
+  return sql.split(/\r?\n/).some((line) => {
+    const trimmed = line.trim();
+    return trimmed.length > 0 && !trimmed.startsWith('--');
+  });
+}
+
 export function validateMigrationDirectory(migrationsDirectory, options = {}) {
   const expectedAppliedMigrations = options.expectedAppliedMigrations ?? EXPECTED_APPLIED_MIGRATIONS;
   const latestAppliedVersion = options.latestAppliedVersion ?? LATEST_APPLIED_VERSION;
@@ -56,6 +63,11 @@ export function validateMigrationDirectory(migrationsDirectory, options = {}) {
     .sort();
   const errors = [];
   const expectedFiles = new Set(expectedAppliedMigrations);
+  const baselineMigration = expectedAppliedMigrations.at(-1);
+  const baselineVersion = baselineMigration?.slice(0, 14);
+  const expectedMarker = baselineVersion
+    ? `-- Applied remotely; represented by the schema baseline in ${baselineVersion}.`
+    : null;
   const versionFiles = new Map();
 
   for (const expectedFilename of expectedAppliedMigrations) {
@@ -91,6 +103,16 @@ export function validateMigrationDirectory(migrationsDirectory, options = {}) {
     }
     if (SUPABASE_SECRET_KEY.test(sql)) {
       errors.push(`${filename}: Supabase secret key found`);
+    }
+
+    if (expectedFiles.has(filename)) {
+      if (filename === baselineMigration) {
+        if (!containsExecutableSql(sql)) {
+          errors.push(`${filename}: baseline must contain executable SQL`);
+        }
+      } else if (sql.trim() !== expectedMarker) {
+        errors.push(`${filename}: applied history must be a comment-only compatibility marker`);
+      }
     }
 
   }

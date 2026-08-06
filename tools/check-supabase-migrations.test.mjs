@@ -25,23 +25,45 @@ afterEach(() => {
 });
 
 describe('validateMigrationDirectory', () => {
-  it('accepts an expected migration and a later migration with custom history', () => {
+  it('accepts marker migrations, one executable baseline, and a later migration', () => {
     const directory = createMigrationsDirectory();
-    const expected = '20260101000000_initial_schema.sql';
-    writeMigration(directory, expected);
+    const marker = '20260101000000_initial_schema.sql';
+    const baseline = '20260101000001_schema_baseline.sql';
     writeMigration(
       directory,
-      '20260101000001_tithely_payment_flow.sql',
+      marker,
+      '-- Applied remotely; represented by the schema baseline in 20260101000001.',
+    );
+    writeMigration(directory, baseline, 'CREATE TABLE public.example (id bigint);');
+    writeMigration(
+      directory,
+      '20260101000002_tithely_payment_flow.sql',
       '-- pending migration',
     );
 
     expect(validateMigrationDirectory(directory, {
-      expectedAppliedMigrations: [expected],
-      latestAppliedVersion: '20260101000000',
+      expectedAppliedMigrations: [marker, baseline],
+      latestAppliedVersion: '20260101000001',
     })).toEqual({
       errors: [],
-      files: [expected, '20260101000001_tithely_payment_flow.sql'],
+      files: [marker, baseline, '20260101000002_tithely_payment_flow.sql'],
     });
+  });
+
+  it('rejects executable marker files and a comment-only baseline', () => {
+    const directory = createMigrationsDirectory();
+    const marker = '20260101000000_initial_schema.sql';
+    const baseline = '20260101000001_schema_baseline.sql';
+    writeMigration(directory, marker, 'SELECT 1;');
+    writeMigration(directory, baseline, '-- no executable schema');
+
+    const { errors } = validateMigrationDirectory(directory, {
+      expectedAppliedMigrations: [marker, baseline],
+      latestAppliedVersion: '20260101000001',
+    });
+
+    expect(errors.join('\n')).toMatch(/comment-only compatibility marker/i);
+    expect(errors.join('\n')).toMatch(/baseline must contain executable SQL/i);
   });
 
   it('rejects short filenames, duplicate versions, and unexpected historical migrations', () => {
