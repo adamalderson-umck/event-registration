@@ -1,0 +1,10 @@
+{
+  "nodeModulesDir": "auto",
+  "imports": {
+    "@supabase/supabase-js": "jsr:@supabase/supabase-js@2.112.1",
+    "emailjs": "npm:emailjs@4.0.3"
+  },
+  "compilerOptions": {
+    "strict": true
+  }
+}
