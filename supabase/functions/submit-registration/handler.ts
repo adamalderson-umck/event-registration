@@ -72,8 +72,6 @@ function errorResponse(code: string, status: number, requestId: string, origin: 
 }
 
 function trustedRequestIp(req: Request): string {
-  const cloudflareIp = req.headers.get('cf-connecting-ip')?.trim();
-  if (cloudflareIp) return cloudflareIp;
   return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
 }
 

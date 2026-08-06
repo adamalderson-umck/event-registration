@@ -60,7 +60,7 @@ function post(body: unknown = requestBody, headers: Record<string, string> = {})
       'Content-Type': 'application/json',
       Origin: allowedOrigin,
       'User-Agent': 'Test Browser',
-      'CF-Connecting-IP': '203.0.113.10',
+      'X-Forwarded-For': '203.0.113.10',
       ...headers,
     },
     body: JSON.stringify(body),
@@ -147,6 +147,22 @@ describe('submit-registration HTTP handler', () => {
       payment_method: null,
       signature_records: [],
     });
+  });
+
+  it('uses the Supabase gateway IP header and ignores a caller-supplied Cloudflare header', async () => {
+    const { handler, verifyTurnstileFn, mocks } = setup();
+    const response = await handler(post(requestBody, {
+      'CF-Connecting-IP': '198.51.100.99',
+      'X-Forwarded-For': '203.0.113.10, 192.0.2.1',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(verifyTurnstileFn).toHaveBeenCalledWith(expect.objectContaining({
+      remoteIp: '203.0.113.10',
+    }));
+    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
+      signature_records: [],
+    }));
   });
 
   it('fails closed when Siteverify rejects and does not log sensitive values', async () => {
