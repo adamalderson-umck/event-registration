@@ -18,7 +18,7 @@ import SignatureViewer from './SignatureViewer';
 import ParkingRegistrationTable from './ParkingRegistrationTable';
 import RecordPaymentDialog from './RecordPaymentDialog';
 import PaymentHistory from './PaymentHistory';
-import { downloadCsv } from '../utils/exportCsv';
+import { downloadCsv, downloadPaymentLedgerCsv } from '../utils/exportCsv';
 import { processCsvFile } from '../utils/importCsv';
 import { getRegistrationWaiverStatuses } from '../utils/registrationWaiverStatus';
 import { printParkingPass } from '../utils/parkingPass';
@@ -477,6 +477,14 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                         event?.waivers
                     )} title="Export to CSV">
                         <Download className="w-4 h-4" /> CSV
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => downloadPaymentLedgerCsv(
+                        filtered,
+                        formFields,
+                        event,
+                        `${event?.title?.replace(/\s+/g, '_') || 'event'}_payments.csv`,
+                    )} title="Export Payment Ledger">
+                        <Download className="w-4 h-4" /> Payments CSV
                     </Button>
                     <Button variant="secondary" size="sm" onClick={() => printRegistrationTable(filtered, event)} title="Print Registration Table">
                         <ClipboardList className="w-4 h-4" /> Table

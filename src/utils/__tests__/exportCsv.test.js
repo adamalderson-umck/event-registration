@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCsvString } from '../exportCsv';
+import { buildCsvString, buildPaymentLedgerCsv } from '../exportCsv';
 
 describe('buildCsvString', () => {
   const fields = [
@@ -16,6 +16,7 @@ describe('buildCsvString', () => {
   const registrations = [
     {
       id: 'r1', status: 'confirmed', payment_status: 'paid',
+      payment_expected_amount: 50, payment_recorded_total: 65,
       created_at: '2026-03-20T12:00:00Z',
       form_data: { f1: 'Alice', f2: 'alice@test.com', f3: ['Peanuts', 'Gluten'] },
       signature_records: [
@@ -25,6 +26,7 @@ describe('buildCsvString', () => {
     },
     {
       id: 'r2', status: 'waitlisted', payment_status: 'pending',
+      payment_expected_amount: 50, payment_recorded_total: 0,
       created_at: '2026-03-21T08:30:00Z',
       form_data: { f1: 'Bob', f2: 'bob@test.com', f3: [] },
     },
@@ -42,6 +44,7 @@ describe('buildCsvString', () => {
     expect(lines[1]).toContain('"Alice"');
     expect(lines[1]).toContain('"Signed","Declined","confirmed"');
     expect(lines[1]).toContain('"Peanuts, Gluten"');
+    expect(lines[1]).toContain('"Paid — $65.00 recorded"');
   });
 
   it('escapes double quotes inside values', () => {
@@ -88,6 +91,8 @@ describe('buildCsvString', () => {
       id: 'parking-1',
       status: 'confirmed',
       payment_status: 'paid',
+      payment_expected_amount: 50,
+      payment_recorded_total: 65,
       form_data: {
         system_first_name: 'Alex',
         parking_license_plate: 'ABC123',
@@ -102,7 +107,36 @@ describe('buildCsvString', () => {
       'First Name,License Plate,Waiver,Media,Status,Payment,Submitted'
     );
     expect(unquotedCsv).toContain(
-      'Alex,ABC123,Missing,Missing,confirmed,paid'
+      'Alex,ABC123,Missing,Missing,confirmed,Paid — $65.00 recorded'
+    );
+  });
+
+  it('exports one ledger row per payment including void audit fields', () => {
+    const registrationsWithPayments = [{
+      ...registrations[0],
+      registration_payments: [
+        {
+          id: 'p1', method: 'cash', amount: 25, payment_date: '2026-08-01',
+          created_at: '2026-08-02T10:00:00Z', created_by: 'admin-1',
+        },
+        {
+          id: 'p2', method: 'tithely', amount: 40, payment_date: '2026-08-02',
+          reference_number: 'TX,"42"', created_at: '2026-08-02T11:00:00Z',
+          created_by: 'admin-1', voided_at: '2026-08-03T11:00:00Z',
+          voided_by: 'admin-2', void_reason: 'Wrong registration',
+        },
+      ],
+    }];
+
+    const csv = buildPaymentLedgerCsv(registrationsWithPayments, fields, { title: 'Beta Event' });
+    const lines = csv.split('\n');
+
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain('"Event","First Name","Email","Allergies","Registration ID"');
+    expect(lines[1]).toContain('"Cash","25.00"');
+    expect(lines[2]).toContain('"Tithe.ly","40.00","2026-08-02","TX,""42"""');
+    expect(lines[2]).toContain(
+      '"Voided","2026-08-03T11:00:00Z","admin-2","Wrong registration"'
     );
   });
 });

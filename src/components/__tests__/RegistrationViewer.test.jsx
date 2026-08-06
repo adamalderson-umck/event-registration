@@ -4,9 +4,15 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { PARKING_FIELD_IDS } from '../../config/eventPresets';
 
-const { downloadCsvMock } = vi.hoisted(() => ({ downloadCsvMock: vi.fn() }));
+const { downloadCsvMock, downloadPaymentLedgerCsvMock } = vi.hoisted(() => ({
+    downloadCsvMock: vi.fn(),
+    downloadPaymentLedgerCsvMock: vi.fn(),
+}));
 
-vi.mock('../../utils/exportCsv', () => ({ downloadCsv: downloadCsvMock }));
+vi.mock('../../utils/exportCsv', () => ({
+    downloadCsv: downloadCsvMock,
+    downloadPaymentLedgerCsv: downloadPaymentLedgerCsvMock,
+}));
 
 vi.mock('../../services/supabase', () => {
     const mockOrder = vi.fn();
@@ -281,6 +287,14 @@ describe('RegistrationViewer', () => {
             event.form_fields,
             'Beta_Event.csv',
             event.waivers
+        );
+
+        fireEvent.click(screen.getByTitle('Export Payment Ledger'));
+        expect(downloadPaymentLedgerCsvMock).toHaveBeenCalledWith(
+            [expect.objectContaining({ id: 'registration-1' })],
+            event.form_fields,
+            event,
+            'Beta_Event_payments.csv',
         );
     });
 
