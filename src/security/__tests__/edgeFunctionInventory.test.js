@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { describe, expect, it } from 'vitest';
 
-const EXPECTED_FUNCTIONS = Object.freeze({
+const DEPLOYED_FUNCTIONS = Object.freeze({
     'capture-signer-ip': {
         version: 4,
         verifyJwt: false,
@@ -46,6 +46,13 @@ const EXPECTED_FUNCTIONS = Object.freeze({
     },
 });
 
+const SOURCE_FUNCTIONS = Object.freeze({
+    ...DEPLOYED_FUNCTIONS,
+    'update-registration-answers': {
+        verifyJwt: true,
+    },
+});
+
 const root = process.cwd();
 const functionsDirectory = path.resolve(root, 'supabase/functions');
 const config = readFileSync(path.resolve(root, 'supabase/config.toml'), 'utf8');
@@ -54,18 +61,18 @@ const inventory = readFileSync(
     'utf8'
 );
 
-describe('deployed Edge Function source inventory', () => {
-    it('tracks exactly the active function slugs', () => {
+describe('Edge Function source and deployment inventory', () => {
+    it('tracks exactly the source function slugs', () => {
         const directories = readdirSync(functionsDirectory, { withFileTypes: true })
             .filter((entry) => entry.isDirectory() && entry.name !== '_shared')
             .map((entry) => entry.name)
             .sort();
 
-        expect(directories).toEqual(Object.keys(EXPECTED_FUNCTIONS).sort());
+        expect(directories).toEqual(Object.keys(SOURCE_FUNCTIONS).sort());
     });
 
-    it('records every function JWT setting in config.toml', () => {
-        for (const [slug, metadata] of Object.entries(EXPECTED_FUNCTIONS)) {
+    it('records every source function JWT setting in config.toml', () => {
+        for (const [slug, metadata] of Object.entries(SOURCE_FUNCTIONS)) {
             const header = `[functions.${slug}]`;
             const blockStart = config.indexOf(header);
             const nextSection = config.indexOf('\n[', blockStart + header.length);
@@ -79,8 +86,8 @@ describe('deployed Edge Function source inventory', () => {
         }
     });
 
-    it('records the live version and bundle hash for every function', () => {
-        for (const [slug, metadata] of Object.entries(EXPECTED_FUNCTIONS)) {
+    it('records the live version and bundle hash for every deployed function', () => {
+        for (const [slug, metadata] of Object.entries(DEPLOYED_FUNCTIONS)) {
             expect(inventory).toContain(`| ${slug} | ${metadata.version} |`);
             expect(inventory).toContain(metadata.hash);
         }
