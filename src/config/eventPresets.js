@@ -1,4 +1,5 @@
 import { US_STATES } from './fieldTemplates';
+import { PARKING_CONFIRMATION_MESSAGE_STARTER } from './eventEmailMessages';
 
 export const EVENT_TYPES = Object.freeze({
     STANDARD: 'standard',
@@ -92,6 +93,7 @@ export const createEventPreset = (eventType = EVENT_TYPES.STANDARD) => {
         paymentEnabled: isParking,
         paymentAmount: '',
         allowInPersonPayment: isParking,
+        confirmationMessage: isParking ? PARKING_CONFIRMATION_MESSAGE_STARTER : '',
     };
 };
 

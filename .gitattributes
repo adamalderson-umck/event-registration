@@ -1,0 +1,2 @@
+supabase/functions/capture-signer-ip/index.ts whitespace=-blank-at-eol
+supabase/functions/verify-cancel-token/index.ts whitespace=-blank-at-eol

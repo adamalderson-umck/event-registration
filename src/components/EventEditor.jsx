@@ -10,7 +10,9 @@ import WaiverSection from './WaiverSection';
 import HeaderImageUpload from './HeaderImageUpload';
 import ThemePicker from './ThemePicker';
 import TithelyConfigurationFields from './TithelyConfigurationFields';
+import EventEmailMessageFields from './EventEmailMessageFields';
 import { buildEventPayload } from '../utils/eventPayload';
+import { applyReminderHoursChange, hasReminderSchedule } from '../config/eventEmailMessages';
 import { useOrg } from '../context/useOrg';
 import { toSlug, isValidSlug } from '../utils/slugUtils';
 import Button from './ui/Button';
@@ -75,6 +77,8 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
             digestDay: 'monday',
         },
         reminderHoursBefore: '',
+        confirmationMessage: preset.confirmationMessage,
+        reminderMessage: '',
         waivers: preset.waivers,
         headerImageUrl: currentOrg?.default_header_image_url || null,
         theme: null,
@@ -134,6 +138,8 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
                             digestDay: data.notifications?.digestDay || 'monday',
                         },
                         reminderHoursBefore: data.reminder_hours_before != null ? String(data.reminder_hours_before) : '',
+                        confirmationMessage: data.confirmation_message || '',
+                        reminderMessage: data.reminder_message || '',
                         waivers: Array.isArray(data.waivers) ? data.waivers : [],
                         headerImageUrl: data.header_image_url || null,
                         theme: data.theme || null,
@@ -168,6 +174,14 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
         setEvent((prev) => ({
             ...prev,
             notifications: { ...prev.notifications, [key]: value },
+        }));
+        setSaved(false);
+    };
+
+    const handleReminderHoursChange = (value) => {
+        setEvent((previous) => ({
+            ...previous,
+            ...applyReminderHoursChange(previous, value),
         }));
         setSaved(false);
     };
@@ -557,12 +571,18 @@ export default function EventEditor({ orgId, eventId, onBack, initialEventType =
                                 type="number"
                                 min="1"
                                 value={event.reminderHoursBefore}
-                                onChange={(e) => handleChange('reminderHoursBefore', e.target.value)}
+                                onChange={(e) => handleReminderHoursChange(e.target.value)}
                                 placeholder="e.g. 24"
                                 className="w-24"
                             />
                             <span className="text-sm text-slate-500">hours before event</span>
                         </div>
+                        <EventEmailMessageFields
+                            confirmationMessage={event.confirmationMessage}
+                            reminderMessage={event.reminderMessage}
+                            reminderEnabled={hasReminderSchedule(event.reminderHoursBefore)}
+                            onChange={handleChange}
+                        />
                     </div>
                 </div>
             </Card>

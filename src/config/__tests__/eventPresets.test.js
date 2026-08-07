@@ -23,6 +23,7 @@ describe('event presets', () => {
         expect(preset.waivers).toEqual([]);
         expect(preset.paymentEnabled).toBe(false);
         expect(preset.allowInPersonPayment).toBe(false);
+        expect(preset.confirmationMessage).toBe('');
     });
 
     it('creates the parking preset', () => {
@@ -60,6 +61,7 @@ describe('event presets', () => {
         })]);
         expect(preset.paymentEnabled).toBe(true);
         expect(preset.allowInPersonPayment).toBe(true);
+        expect(preset.confirmationMessage).toBe('Thank you for registering for this parking event.');
     });
 
     it('returns independent preset copies', () => {

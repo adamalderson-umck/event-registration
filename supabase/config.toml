@@ -382,7 +382,29 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
+[functions.capture-signer-ip]
+verify_jwt = false
+
+[functions.resolve-member-email]
+verify_jwt = true
+
+[functions.send-event-reminders]
+verify_jwt = true
+
+[functions.send-organizer-invite]
+verify_jwt = true
+
+[functions.send-registration-email]
+verify_jwt = true
+entrypoint = "./functions/send-registration-email/send-registration-email.ts"
+
 [functions.submit-registration]
+verify_jwt = false
+
+[functions.verify-cancel-token]
+verify_jwt = false
+
+[functions.weekly-digest]
 verify_jwt = false
 
 # [edge_runtime.secrets]
