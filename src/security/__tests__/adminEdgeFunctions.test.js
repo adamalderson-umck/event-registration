@@ -32,4 +32,14 @@ describe('admin Edge Function authorization contracts', () => {
     expect(source).toMatch(/recipient is not an organizer/i);
     expect(source).toMatch(/escapeHtml\(event\.title\)/);
   });
+
+  it('protects registration answer edits with auth, membership, and trusted RPC data', () => {
+    const source = readFunction('update-registration-answers');
+    expect(source).toMatch(/auth\.getUser\(\)/);
+    expect(source).toMatch(/from\('org_members'\)/);
+    expect(source).toMatch(/from\('registrations'\)/);
+    expect(source).toMatch(/from\('events'\)/);
+    expect(source).toMatch(/rpc\([\s\S]*'apply_registration_answer_edit'/);
+    expect(source).toMatch(/SUPABASE_SERVICE_ROLE_KEY/);
+  });
 });
