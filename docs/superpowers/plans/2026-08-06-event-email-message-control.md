@@ -100,8 +100,12 @@ describe('event email message control migration', () => {
         expect(sql).toMatch(/grant select, insert, update on table public\.email_deliveries to service_role/i);
     });
 
+    it('loads the protected webhook credential from Vault', () => {
+        expect(sql).toMatch(/from vault\.decrypted_secrets[\s\S]+name\s*=\s*'service_role_key'/i);
+        expect(sql).not.toMatch(/current_setting\('app\.settings\.service_role_key'/i);
+    });
+
     it('replaces full-row anonymous webhook payloads with protected identifiers', () => {
-        expect(sql).toMatch(/current_setting\('app\.settings\.service_role_key',\s*true\)/i);
         expect(sql).toMatch(/'registration_id',\s*new\.id/i);
         expect(sql).not.toMatch(/to_jsonb\(new\)/i);
         expect(sql).not.toMatch(/name\s*=\s*'anon_key'/i);
@@ -207,7 +211,9 @@ BEGIN
   SELECT decrypted_secret INTO v_project_url
   FROM vault.decrypted_secrets
   WHERE name = 'project_url';
-  v_service_role_key := current_setting('app.settings.service_role_key', true);
+  SELECT decrypted_secret INTO v_service_role_key
+  FROM vault.decrypted_secrets
+  WHERE name = 'service_role_key';
 
   IF v_project_url IS NULL OR coalesce(v_service_role_key, '') = '' THEN
     RAISE WARNING 'Registration email automation is not configured';
@@ -248,7 +254,9 @@ BEGIN
   SELECT decrypted_secret INTO v_project_url
   FROM vault.decrypted_secrets
   WHERE name = 'project_url';
-  v_service_role_key := current_setting('app.settings.service_role_key', true);
+  SELECT decrypted_secret INTO v_service_role_key
+  FROM vault.decrypted_secrets
+  WHERE name = 'service_role_key';
 
   IF v_project_url IS NULL OR coalesce(v_service_role_key, '') = '' THEN
     RAISE WARNING 'Registration email automation is not configured';
@@ -1549,13 +1557,14 @@ Do **not** run `supabase db push`: the live migration ledger is known to differ 
 Only after Issue #5 is resolved, the PR is reviewed/merged as separately authorized, and the user explicitly authorizes production rollout:
 
 1. Read the live migration ledger and prove it aligns with the repository ledger.
-2. Apply the reviewed database migration through the normal migration mechanism.
-3. Deploy the application editor/validation build.
-4. Deploy only `send-registration-email` from the reviewed repository commit.
-5. Deploy only `send-event-reminders` from the reviewed repository commit.
-6. Never deploy `capture-signer-ip`, `verify-cancel-token`, or `weekly-digest` as part of this work.
-7. Read back the full function inventory, versions, JWT settings, and bundle hashes; compare the two changed bundles with the reviewed source artifact.
-8. With a separately approved test recipient, send one controlled confirmation and one controlled reminder and inspect content, links, current payment state, ledger state, and duplicate suppression.
+2. Store the existing legacy service-role key in Supabase Vault under the unique name `service_role_key`, without logging or committing its value, and verify only that the named secret exists.
+3. Apply the reviewed database migration through the normal migration mechanism. The migration also replaces the existing `send-event-reminders` cron definition with the same hourly schedule and Vault-backed authentication.
+4. Deploy the application editor/validation build.
+5. Deploy only `send-registration-email` from the reviewed repository commit.
+6. Deploy only `send-event-reminders` from the reviewed repository commit.
+7. Never deploy `capture-signer-ip`, `verify-cancel-token`, or `weekly-digest` as part of this work.
+8. Read back the full function inventory, versions, JWT settings, and bundle hashes; compare the two changed bundles with the reviewed source artifact.
+9. With a separately approved test recipient, send one controlled confirmation and one controlled reminder and inspect content, links, current payment state, ledger state, and duplicate suppression.
 
 Treat any migration mismatch, unexpected function revision, hash mismatch, unauthorized response, duplicate delivery, stale reminder payment status, or parking-process promise as a failed rollout. Stop and report it rather than continuing.
 

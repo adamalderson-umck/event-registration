@@ -67,7 +67,9 @@ BEGIN
   FROM vault.decrypted_secrets
   WHERE name = 'project_url';
 
-  v_service_role_key := current_setting('app.settings.service_role_key', true);
+  SELECT decrypted_secret INTO v_service_role_key
+  FROM vault.decrypted_secrets
+  WHERE name = 'service_role_key';
 
   IF v_project_url IS NULL OR coalesce(v_service_role_key, '') = '' THEN
     RAISE WARNING 'Registration email automation is not configured';
@@ -108,7 +110,9 @@ BEGIN
   FROM vault.decrypted_secrets
   WHERE name = 'project_url';
 
-  v_service_role_key := current_setting('app.settings.service_role_key', true);
+  SELECT decrypted_secret INTO v_service_role_key
+  FROM vault.decrypted_secrets
+  WHERE name = 'service_role_key';
 
   IF v_project_url IS NULL OR coalesce(v_service_role_key, '') = '' THEN
     RAISE WARNING 'Registration email automation is not configured';
@@ -132,3 +136,23 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+SELECT cron.schedule(
+  'send-event-reminders',
+  '0 * * * *',
+  $job$
+  SELECT net.http_post(
+    url := (SELECT decrypted_secret
+            FROM vault.decrypted_secrets
+            WHERE name = 'project_url')
+           || '/functions/v1/send-event-reminders',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (SELECT decrypted_secret
+                                     FROM vault.decrypted_secrets
+                                     WHERE name = 'service_role_key')
+    ),
+    body := '{}'::jsonb
+  ) AS request_id;
+  $job$
+);

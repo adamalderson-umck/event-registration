@@ -36,8 +36,18 @@ describe('event email message control migration', () => {
         expect(sql).toMatch(/grant select, insert, update on table public\.email_deliveries to service_role/i);
     });
 
+    it('loads the protected webhook credential from Vault', () => {
+        expect(sql).toMatch(/from vault\.decrypted_secrets[\s\S]+name\s*=\s*'service_role_key'/i);
+        expect(sql).not.toMatch(/current_setting\('app\.settings\.service_role_key'/i);
+    });
+
+    it('preserves the hourly reminder schedule with Vault-backed authentication', () => {
+        expect(sql).toMatch(
+            /cron\.schedule\([\s\S]+?'send-event-reminders'[\s\S]+?'0 \* \* \* \*'[\s\S]+?name\s*=\s*'project_url'[\s\S]+?name\s*=\s*'service_role_key'/i
+        );
+    });
+
     it('replaces full-row anonymous webhook payloads with protected transition identifiers', () => {
-        expect(sql).toMatch(/current_setting\('app\.settings\.service_role_key',\s*true\)/i);
         expect(sql).toMatch(/'registration_id',\s*new\.id/i);
         expect(sql).toMatch(/'type',\s*'INSERT'/i);
         expect(sql).toMatch(/'type',\s*'UPDATE'/i);
