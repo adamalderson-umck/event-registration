@@ -56,7 +56,7 @@ Never hand-author a migration timestamp. The first 35 applied versions are times
 
 The `supabase/.temp` directory is uncommitted local CLI state. `db reset --local` deletes and recreates only the disposable local database.
 
-The baseline stores inert local Vault placeholders named `project_url` and `anon_key`. To test webhooks locally, use local Studio to replace those values with the API URL and anon key printed by `npx supabase status`. Never commit either value.
+The baseline stores inert local Vault placeholders named `project_url` and `anon_key`. The event-email automation also requires a Vault secret named `service_role_key`; do not store that credential in an `app.settings` database parameter. To test webhooks and reminders locally, use local Studio to supply the API URL and keys printed by `npx supabase status`. Never commit any key value.
 
 ### Linked migration gate
 
