@@ -4,14 +4,29 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { PARKING_FIELD_IDS } from '../../config/eventPresets';
 
-const { downloadCsvMock, downloadPaymentLedgerCsvMock } = vi.hoisted(() => ({
+const {
+    downloadCsvMock,
+    downloadPaymentLedgerCsvMock,
+    updateRegistrationAnswersMock,
+} = vi.hoisted(() => ({
     downloadCsvMock: vi.fn(),
     downloadPaymentLedgerCsvMock: vi.fn(),
+    updateRegistrationAnswersMock: vi.fn(),
 }));
 
 vi.mock('../../utils/exportCsv', () => ({
     downloadCsv: downloadCsvMock,
     downloadPaymentLedgerCsv: downloadPaymentLedgerCsvMock,
+}));
+
+vi.mock('../../services/registrationAnswerEdits', () => ({
+    updateRegistrationAnswers: updateRegistrationAnswersMock,
+}));
+
+vi.mock('../RegistrationEditHistory', () => ({
+    default: ({ refreshKey }) => (
+        <div data-testid="edit-history">history-{refreshKey}</div>
+    ),
 }));
 
 vi.mock('../../services/supabase', () => {
@@ -53,6 +68,23 @@ describe('RegistrationViewer', () => {
         title: 'Fall Parking',
         event_type: 'parking',
     };
+    const editableParkingEvent = {
+        ...parkingEvent,
+        form_fields: [
+            { id: 'system_first_name', label: 'First Name', type: 'text', required: true },
+            { id: 'system_last_name', label: 'Last Name', type: 'text', required: true },
+            { id: 'system_email', label: 'Email', type: 'email', required: true },
+            {
+                id: PARKING_FIELD_IDS.LICENSE_PLATE,
+                label: 'License Plate',
+                type: 'text',
+                required: true,
+            },
+            { id: PARKING_FIELD_IDS.VEHICLE_MAKE, label: 'Vehicle Make', type: 'text' },
+            { id: PARKING_FIELD_IDS.VEHICLE_MODEL, label: 'Vehicle Model', type: 'text' },
+            { id: PARKING_FIELD_IDS.VEHICLE_COLOR, label: 'Vehicle Color', type: 'text' },
+        ],
+    };
     const parkingRegistration = {
         id: 'parking-registration-1',
         status: 'confirmed',
@@ -90,6 +122,7 @@ describe('RegistrationViewer', () => {
             }],
             error: null,
         });
+        updateRegistrationAnswersMock.mockReset();
     });
 
     it('renders Waiver and Media before Status, with Payment before Actions', async () => {
@@ -388,5 +421,178 @@ describe('RegistrationViewer', () => {
         await user.click(await screen.findByRole('button', { name: 'Record Payment' }));
 
         expect(await screen.findByRole('dialog', { name: 'Record payment' })).toBeInTheDocument();
+    });
+
+    it.each(['confirmed', 'pending', 'waitlisted'])(
+        'offers answer editing for a %s registration',
+        async (status) => {
+            const user = userEvent.setup();
+            supabase._mocks.mockOrder.mockResolvedValue({
+                data: [{
+                    id: 'registration-1',
+                    status,
+                    payment_status: 'not_required',
+                    registration_payments: [],
+                    form_data: { name: 'Alex' },
+                    signature_records: [],
+                }],
+                error: null,
+            });
+
+            render(<RegistrationViewer
+                orgId="org-1"
+                eventId="event-1"
+                event={event}
+                onBack={vi.fn()}
+            />);
+            await user.click(await screen.findByRole('button', { name: /view/i }));
+            expect(screen.getByRole('button', { name: 'Edit Answers' })).toBeInTheDocument();
+        },
+    );
+
+    it('keeps cancelled registrations read-only', async () => {
+        const user = userEvent.setup();
+        supabase._mocks.mockOrder.mockResolvedValue({
+            data: [{
+                id: 'registration-1',
+                status: 'cancelled',
+                payment_status: 'not_required',
+                registration_payments: [],
+                form_data: { name: 'Alex' },
+                signature_records: [],
+            }],
+            error: null,
+        });
+
+        render(<RegistrationViewer
+            orgId="org-1"
+            eventId="event-1"
+            event={event}
+            onBack={vi.fn()}
+        />);
+        await user.click(await screen.findByRole('button', { name: /view/i }));
+        expect(screen.queryByRole('button', { name: 'Edit Answers' })).not.toBeInTheDocument();
+    });
+
+    it('saves a parking plate and replaces detail, list, and history state', async () => {
+        const user = userEvent.setup();
+        const updated = {
+            ...parkingRegistration,
+            form_data: {
+                ...parkingRegistration.form_data,
+                [PARKING_FIELD_IDS.LICENSE_PLATE]: 'PERM456',
+            },
+        };
+        supabase._mocks.mockOrder.mockResolvedValue({
+            data: [parkingRegistration],
+            error: null,
+        });
+        updateRegistrationAnswersMock.mockResolvedValue({
+            registration: updated,
+            edit: { id: 'edit-1' },
+        });
+
+        render(<RegistrationViewer
+            orgId="org-1"
+            eventId="event-1"
+            event={editableParkingEvent}
+            organizationName="Kent Methodist Church"
+            onBack={vi.fn()}
+        />);
+        await user.click(await screen.findByRole('button', { name: /view/i }));
+        expect(screen.getByTestId('edit-history')).toHaveTextContent('history-0');
+        await user.click(screen.getByRole('button', { name: 'Edit Answers' }));
+        const plate = screen.getByLabelText(/^License Plate/);
+        await user.clear(plate);
+        await user.type(plate, 'PERM456');
+        await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+        await waitFor(() => expect(updateRegistrationAnswersMock).toHaveBeenCalledWith({
+            registrationId: 'parking-registration-1',
+            orgId: 'org-1',
+            expectedFormData: parkingRegistration.form_data,
+            answers: expect.objectContaining({
+                [PARKING_FIELD_IDS.LICENSE_PLATE]: 'PERM456',
+            }),
+        }));
+        expect(await screen.findByText('PERM456')).toBeInTheDocument();
+        expect(screen.getByTestId('edit-history')).toHaveTextContent('history-1');
+        await user.click(screen.getByRole('button', { name: 'Back to List' }));
+        expect(screen.getByText('PERM456')).toBeInTheDocument();
+    });
+
+    it.each([
+        ['edit_conflict', 'This registration changed elsewhere. Reload the latest answers before trying again.'],
+        ['registration_cancelled', 'This registration was cancelled and is now read-only.'],
+        ['invalid_request', 'Correct the highlighted registration answers and try again.'],
+        ['save_failed', 'Unable to save these changes. Your draft has been kept; please try again.'],
+    ])('keeps the draft after %s', async (code, message) => {
+        const user = userEvent.setup();
+        updateRegistrationAnswersMock.mockRejectedValue(
+            Object.assign(new Error(code), { code }),
+        );
+
+        render(<RegistrationViewer
+            orgId="org-1"
+            eventId="event-1"
+            event={event}
+            onBack={vi.fn()}
+        />);
+        await user.click(await screen.findByRole('button', { name: /view/i }));
+        await user.click(screen.getByRole('button', { name: 'Edit Answers' }));
+        const name = screen.getByLabelText('Name');
+        await user.clear(name);
+        await user.type(name, 'Morgan');
+        await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(message);
+        expect(screen.getByLabelText('Name')).toHaveValue('Morgan');
+    });
+
+    it('confirms dirty Cancel and Back but not clean Cancel', async () => {
+        const user = userEvent.setup();
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+        render(<RegistrationViewer
+            orgId="org-1"
+            eventId="event-1"
+            event={event}
+            onBack={vi.fn()}
+        />);
+        await user.click(await screen.findByRole('button', { name: /view/i }));
+        await user.click(screen.getByRole('button', { name: 'Edit Answers' }));
+        await user.click(screen.getByRole('button', { name: 'Cancel Editing' }));
+        expect(confirmSpy).not.toHaveBeenCalled();
+
+        await user.click(screen.getByRole('button', { name: 'Edit Answers' }));
+        await user.clear(screen.getByLabelText('Name'));
+        await user.type(screen.getByLabelText('Name'), 'Morgan');
+        await user.click(screen.getByRole('button', { name: 'Cancel Editing' }));
+        await user.click(screen.getByRole('button', { name: 'Back to List' }));
+        expect(confirmSpy).toHaveBeenCalledTimes(2);
+        expect(screen.getByLabelText('Name')).toHaveValue('Morgan');
+        confirmSpy.mockRestore();
+    });
+
+    it('prevents beforeunload only while an edit is dirty', async () => {
+        const user = userEvent.setup();
+        render(<RegistrationViewer
+            orgId="org-1"
+            eventId="event-1"
+            event={event}
+            onBack={vi.fn()}
+        />);
+        await user.click(await screen.findByRole('button', { name: /view/i }));
+        await user.click(screen.getByRole('button', { name: 'Edit Answers' }));
+
+        const cleanEvent = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(cleanEvent);
+        expect(cleanEvent.defaultPrevented).toBe(false);
+
+        await user.clear(screen.getByLabelText('Name'));
+        await user.type(screen.getByLabelText('Name'), 'Morgan');
+        const dirtyEvent = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(dirtyEvent);
+        expect(dirtyEvent.defaultPrevented).toBe(true);
     });
 });

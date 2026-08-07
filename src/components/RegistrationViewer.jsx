@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import {
     ArrowLeft, Search, Printer, FileText, ClipboardList,
-    BarChart3, Users, Loader2, X, Eye, Download, XCircle, Upload
+    BarChart3, Users, Loader2, X, Eye, Download, XCircle, Upload, Pencil
 } from 'lucide-react';
 import {
     printIndividualRegistration,
@@ -18,6 +18,9 @@ import SignatureViewer from './SignatureViewer';
 import ParkingRegistrationTable from './ParkingRegistrationTable';
 import RecordPaymentDialog from './RecordPaymentDialog';
 import PaymentHistory from './PaymentHistory';
+import RegistrationAnswerEditor from './RegistrationAnswerEditor';
+import RegistrationEditHistory from './RegistrationEditHistory';
+import { updateRegistrationAnswers } from '../services/registrationAnswerEdits';
 import { downloadCsv, downloadPaymentLedgerCsv } from '../utils/exportCsv';
 import { processCsvFile } from '../utils/importCsv';
 import { getRegistrationWaiverStatuses } from '../utils/registrationWaiverStatus';
@@ -27,7 +30,13 @@ import {
     formatRecordPaymentError,
     formatPaymentSummary,
 } from '../utils/paymentStatus';
-import { useRef } from 'react';
+
+const answerSaveMessages = {
+    edit_conflict: 'This registration changed elsewhere. Reload the latest answers before trying again.',
+    registration_cancelled: 'This registration was cancelled and is now read-only.',
+    invalid_request: 'Correct the highlighted registration answers and try again.',
+    save_failed: 'Unable to save these changes. Your draft has been kept; please try again.',
+};
 
 export default function RegistrationViewer({ orgId, eventId, event, organizationName, onBack }) {
     const [registrations, setRegistrations] = useState([]);
@@ -41,6 +50,11 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
     const [recordingPayment, setRecordingPayment] = useState(false);
     const [voidingPaymentId, setVoidingPaymentId] = useState(null);
     const [paymentError, setPaymentError] = useState('');
+    const [editingAnswers, setEditingAnswers] = useState(false);
+    const [answerDraftDirty, setAnswerDraftDirty] = useState(false);
+    const [savingAnswers, setSavingAnswers] = useState(false);
+    const [answerSaveError, setAnswerSaveError] = useState('');
+    const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
     // Import states
     const fileInputRef = useRef(null);
@@ -87,6 +101,17 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
 
         return () => supabase.removeChannel(channel);
     }, [orgId, eventId]);
+
+    useEffect(() => {
+        if (!editingAnswers || !answerDraftDirty) return undefined;
+
+        const handleBeforeUnload = (event) => {
+            event.preventDefault();
+            event.returnValue = '';
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [editingAnswers, answerDraftDirty]);
 
     const handleAdminCancel = async (regId) => {
         if (!confirm('Are you sure you want to cancel this registration? This will open up a spot and may promote someone from the waitlist.')) {
@@ -294,6 +319,58 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
         return reg.form_data;
     };
 
+    const discardAnswerDraft = () => (
+        !answerDraftDirty || window.confirm('Discard unsaved registration changes?')
+    );
+
+    const closeAnswerEditor = () => {
+        if (!discardAnswerDraft()) return false;
+        setEditingAnswers(false);
+        setAnswerDraftDirty(false);
+        setAnswerSaveError('');
+        return true;
+    };
+
+    const handleBackToList = () => {
+        if (editingAnswers && !closeAnswerEditor()) return;
+        setSelectedReg(null);
+    };
+
+    const handleSaveAnswers = async (answers) => {
+        if (!selectedReg || savingAnswers) return;
+
+        setSavingAnswers(true);
+        setAnswerSaveError('');
+        try {
+            const result = await updateRegistrationAnswers({
+                registrationId: selectedReg.id,
+                orgId,
+                expectedFormData: getFormData(selectedReg),
+                answers,
+            });
+            const updated = {
+                ...selectedReg,
+                ...result.registration,
+                registration_payments: result.registration.registration_payments
+                    || selectedReg.registration_payments
+                    || [],
+            };
+
+            setRegistrations((current) => current.map((registration) => (
+                registration.id === updated.id ? updated : registration
+            )));
+            setSelectedReg(updated);
+            setEditingAnswers(false);
+            setAnswerDraftDirty(false);
+            setAnswerSaveError('');
+            if (result.edit) setHistoryRefreshKey((current) => current + 1);
+        } catch (error) {
+            setAnswerSaveError(answerSaveMessages[error.code] || answerSaveMessages.save_failed);
+        } finally {
+            setSavingAnswers(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex justify-center py-20">
@@ -313,11 +390,24 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                     </div>
                 )}
                 <div className="flex items-center justify-between">
-                    <Button variant="ghost" onClick={() => setSelectedReg(null)}>
+                    <Button variant="ghost" onClick={handleBackToList}>
                         <ArrowLeft className="w-4 h-4" /> Back to List
                     </Button>
                     <div className="flex gap-2">
-                        {selectedReg.status !== 'cancelled' && (
+                        {!editingAnswers && selectedReg.status !== 'cancelled' && (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => {
+                                    setAnswerSaveError('');
+                                    setAnswerDraftDirty(false);
+                                    setEditingAnswers(true);
+                                }}
+                            >
+                                <Pencil className="w-4 h-4" /> Edit Answers
+                            </Button>
+                        )}
+                        {!editingAnswers && selectedReg.status !== 'cancelled' && (
                             <Button
                                 variant="danger"
                                 size="sm"
@@ -327,7 +417,7 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                                 <XCircle className="w-4 h-4" /> Cancel Registration
                             </Button>
                         )}
-                        {canRecordRegistrationPayment(selectedReg) && (
+                        {!editingAnswers && canRecordRegistrationPayment(selectedReg) && (
                             <Button
                                 variant="secondary"
                                 size="sm"
@@ -339,13 +429,15 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                                 Record Payment
                             </Button>
                         )}
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => printIndividualRegistration(selectedReg, event)}
-                        >
-                            <Printer className="w-4 h-4" /> Print
-                        </Button>
+                        {!editingAnswers && (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => printIndividualRegistration(selectedReg, event)}
+                            >
+                                <Printer className="w-4 h-4" /> Print
+                            </Button>
+                        )}
                     </div>
                 </div>
 
@@ -357,25 +449,37 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                         </span>
                     </div>
 
-                    <div className="space-y-3">
-                        {formFields.map((field) => (
-                            <div key={field.id} className="grid grid-cols-3 gap-2 py-2 border-b border-slate-100 last:border-0">
-                                <dt className="text-sm font-medium text-slate-500">{field.label}</dt>
-                                <dd className="col-span-2 text-sm text-slate-900">
-                                    {formatValue(getFormData(selectedReg)[field.id])}
-                                </dd>
-                            </div>
-                        ))}
-                    </div>
+                    {editingAnswers ? (
+                        <RegistrationAnswerEditor
+                            formFields={formFields}
+                            savedFormData={getFormData(selectedReg)}
+                            onSave={handleSaveAnswers}
+                            onCancel={closeAnswerEditor}
+                            onDirtyChange={setAnswerDraftDirty}
+                            saving={savingAnswers}
+                            saveError={answerSaveError}
+                        />
+                    ) : (
+                        <div className="space-y-3">
+                            {formFields.map((field) => (
+                                <div key={field.id} className="grid grid-cols-3 gap-2 py-2 border-b border-slate-100 last:border-0">
+                                    <dt className="text-sm font-medium text-slate-500">{field.label}</dt>
+                                    <dd className="col-span-2 text-sm text-slate-900">
+                                        {formatValue(getFormData(selectedReg)[field.id])}
+                                    </dd>
+                                </div>
+                            ))}
+                        </div>
+                    )}
 
                     {/* Waiver Signatures */}
-                    {Array.isArray(selectedReg.signature_records) && selectedReg.signature_records.length > 0 && (
+                    {!editingAnswers && Array.isArray(selectedReg.signature_records) && selectedReg.signature_records.length > 0 && (
                         <div className="mt-4">
                             <SignatureViewer registration={selectedReg} event={event} />
                         </div>
                     )}
 
-                    <div className="mt-4 border-t border-slate-200 pt-4">
+                    {!editingAnswers && <div className="mt-4 border-t border-slate-200 pt-4">
                         <p className="text-sm font-semibold text-slate-900">{formatPaymentSummary(selectedReg)}</p>
                         <p className="mt-1 text-xs text-slate-500">Selected method: {selectedReg.payment_method || 'None'}</p>
                         <PaymentHistory
@@ -385,13 +489,21 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                             voidingPaymentId={voidingPaymentId}
                             error={paymentError}
                         />
-                    </div>
-                    <div className="mt-4 text-xs text-slate-400">
+                    </div>}
+                    {!editingAnswers && <div className="mt-4 text-xs text-slate-400">
                         <p>Submitted: {selectedReg.created_at
                             ? new Date(selectedReg.created_at).toLocaleString()
                             : 'N/A'}</p>
-                    </div>
+                    </div>}
                 </Card>
+                {!editingAnswers && (
+                    <RegistrationEditHistory
+                        registrationId={selectedReg.id}
+                        orgId={orgId}
+                        fields={formFields}
+                        refreshKey={historyRefreshKey}
+                    />
+                )}
                 {paymentDialogRegistration && (
                     <RecordPaymentDialog
                         registration={paymentDialogRegistration}
