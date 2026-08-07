@@ -1,7 +1,7 @@
 # Repeat-Submission Warning Design
 
 - **Date:** 2026-08-07
-- **Status:** Design approved; written specification pending user review
+- **Status:** Approved
 
 ## Goal
 
