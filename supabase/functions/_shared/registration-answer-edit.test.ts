@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeCurrentFormData } from './registration-request.ts';
+import {
+  parseRegistrationAnswerEditRequest,
+  prepareRegistrationAnswerEdit,
+} from './registration-answer-edit.ts';
+
+const REGISTRATION_ID = '33333333-3333-4333-8333-333333333333';
 
 const event = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -46,5 +52,95 @@ describe('normalizeCurrentFormData', () => {
       email: 'alex@example.org',
       permit: 'Yes',
     })).toThrow('invalid_request');
+  });
+});
+
+describe('registration answer edits', () => {
+  it('parses only the bounded request contract', () => {
+    expect(parseRegistrationAnswerEditRequest({
+      registrationId: REGISTRATION_ID,
+      orgId: event.org_id,
+      expectedFormData: { name: 'Alex' },
+      answers: { name: 'Morgan' },
+    })).toEqual({
+      registrationId: REGISTRATION_ID,
+      orgId: event.org_id,
+      expectedFormData: { name: 'Alex' },
+      answers: { name: 'Morgan' },
+    });
+
+    expect(() => parseRegistrationAnswerEditRequest({
+      registrationId: REGISTRATION_ID,
+      orgId: event.org_id,
+      expectedFormData: {},
+      answers: {},
+      status: 'confirmed',
+    })).toThrow('invalid_request');
+  });
+
+  it('preserves legacy answers and records current-field changes', () => {
+    const prepared = prepareRegistrationAnswerEdit(event, {
+      form_data: {
+        name: 'Alex',
+        email: 'alex@example.org',
+        permit: 'Yes',
+        plate: 'TEMP',
+        retired: 'keep me',
+      },
+    }, {
+      name: 'Alex',
+      email: 'alex@example.org',
+      permit: 'Yes',
+      plate: 'ABC123',
+    });
+
+    expect(prepared.formData).toEqual({
+      retired: 'keep me',
+      name: 'Alex',
+      email: 'alex@example.org',
+      permit: 'Yes',
+      plate: 'ABC123',
+    });
+    expect(prepared.changes).toEqual([{
+      fieldId: 'plate',
+      fieldLabel: 'License Plate',
+      before: 'TEMP',
+      after: 'ABC123',
+    }]);
+  });
+
+  it('records removal when a condition hides a field', () => {
+    const prepared = prepareRegistrationAnswerEdit(event, {
+      form_data: {
+        name: 'Alex',
+        email: 'alex@example.org',
+        permit: 'Yes',
+        plate: 'TEMP',
+      },
+    }, {
+      name: 'Alex',
+      email: 'alex@example.org',
+      permit: 'No',
+    });
+
+    expect(prepared.formData).toEqual({
+      name: 'Alex',
+      email: 'alex@example.org',
+      permit: 'No',
+    });
+    expect(prepared.changes).toEqual([
+      { fieldId: 'permit', fieldLabel: 'Permit?', before: 'Yes', after: 'No' },
+      { fieldId: 'plate', fieldLabel: 'License Plate', before: 'TEMP', after: null },
+    ]);
+  });
+
+  it('returns no changes after normalization of equivalent answers', () => {
+    expect(prepareRegistrationAnswerEdit(event, {
+      form_data: { name: 'Alex', email: 'alex@example.org', permit: 'No' },
+    }, {
+      name: 'Alex',
+      email: ' ALEX@EXAMPLE.ORG ',
+      permit: 'No',
+    }).changes).toEqual([]);
   });
 });
