@@ -44,13 +44,18 @@ const DEPLOYED_FUNCTIONS = Object.freeze({
         verifyJwt: false,
         hash: 'e439e792d708bb5bdf6910a8a7b363716773731016496f39bd55a8852ba25cd9',
     },
+    'update-registration-answers': {
+        version: 1,
+        verifyJwt: true,
+        hash: '334319f520d556bf8808fd756209ed0d0f1bb46f5f338b6bef9148ddfdf4c383',
+    },
 });
+
+const PENDING_DEPLOYMENT_FUNCTIONS = Object.freeze({});
 
 const SOURCE_FUNCTIONS = Object.freeze({
     ...DEPLOYED_FUNCTIONS,
-    'update-registration-answers': {
-        verifyJwt: true,
-    },
+    ...PENDING_DEPLOYMENT_FUNCTIONS,
 });
 
 const root = process.cwd();

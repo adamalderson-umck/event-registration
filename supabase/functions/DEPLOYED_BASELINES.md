@@ -10,7 +10,10 @@ Read from Supabase project `eonpdgufuewpqdjpshbc` on 2026-08-06 with Supabase CL
 | send-organizer-invite | 4 | true | `send-organizer-invite/index.ts` | `dd8d3785d1d64f87402cf32546d2e27625562678a1e49d6a2321cfa2d62ed576` |
 | send-registration-email | 7 | false | `send-registration-email.ts` | `ade3a9d9e03ac124dd386cf1d44b599d6f7ad15fe48668ca030a2657d954b397` |
 | submit-registration | 1 | false | `supabase/functions/submit-registration/index.ts` | `1091232fc9ce5a44c37f2a77005a0e05d362488f364e197eb79de778da8ccfce` |
+| update-registration-answers | 1 | true | `supabase/functions/update-registration-answers/index.ts` | `334319f520d556bf8808fd756209ed0d0f1bb46f5f338b6bef9148ddfdf4c383` |
 | verify-cancel-token | 3 | false | `index.ts` | `2ceefd0a228bbc5179fd97267af88149058b3a0e9af6950e1365458c8a1ffa40` |
 | weekly-digest | 2 | false | `index.ts` | `e439e792d708bb5bdf6910a8a7b363716773731016496f39bd55a8852ba25cd9` |
+
+`update-registration-answers` was read back from the live project on 2026-08-07 after deployment.
 
 The bundle hash is Supabase deployment metadata, not a hash of an individual downloaded source file. The five missing functions were committed immediately after download. `capture-signer-ip`, `verify-cancel-token`, and `weekly-digest` are recovery-only in the email-message-control project and must not be behaviorally changed or redeployed there.
