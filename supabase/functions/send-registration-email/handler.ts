@@ -75,16 +75,40 @@ export interface RegistrationOutgoingEmail extends OutgoingEmail {
 
 export interface RegistrationEmailDependencies {
   serviceRoleKey: string;
+  baseUrl: string;
   loadCanonicalDelivery(
     registrationId: string,
   ): Promise<CanonicalRegistrationDelivery | null>;
-  buildCancelUrl(record: CanonicalRegistrationDelivery): Promise<string>;
+  generateCancelToken(record: CanonicalRegistrationDelivery): Promise<string>;
   loadSmtpPassword(orgId: string): Promise<string>;
   deliver(
     claim: DeliveryClaim,
     send: () => Promise<void>,
   ): Promise<DeliveryResult>;
   send(input: RegistrationOutgoingEmail): Promise<void>;
+}
+
+async function buildCancelUrl(
+  record: CanonicalRegistrationDelivery,
+  dependencies: RegistrationEmailDependencies,
+): Promise<string> {
+  let baseUrl: URL;
+  try {
+    baseUrl = new URL(dependencies.baseUrl);
+  } catch {
+    throw new SanitizedDeliveryError("base_url_not_configured");
+  }
+  if (baseUrl.protocol !== "https:" && baseUrl.protocol !== "http:") {
+    throw new SanitizedDeliveryError("base_url_not_configured");
+  }
+
+  const url = new URL("/", baseUrl);
+  url.searchParams.set("cancel", "true");
+  url.searchParams.set(
+    "token",
+    await dependencies.generateCancelToken(record),
+  );
+  return url.toString();
 }
 
 interface LogicalDelivery {
@@ -298,7 +322,7 @@ function buildLogicalDeliveries(
         recipient: email,
         occurrence: record.registration.created_at,
         compose: async () => {
-          const cancelUrl = await dependencies.buildCancelUrl(record);
+          const cancelUrl = await buildCancelUrl(record, dependencies);
           if (kind === "registration_waitlist") {
             return waitlistEmail(record, cancelUrl);
           }
@@ -362,7 +386,7 @@ function buildLogicalDeliveries(
         compose: async () =>
           promotionEmail(
             record,
-            await dependencies.buildCancelUrl(record),
+            await buildCancelUrl(record, dependencies),
           ),
       });
     }

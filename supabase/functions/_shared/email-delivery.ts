@@ -22,6 +22,7 @@ export type DeliveryFailureCode =
   | "smtp_send_failed"
   | "smtp_not_configured"
   | "cancel_token_not_configured"
+  | "base_url_not_configured"
   | "message_configuration_missing"
   | "recipient_missing"
   | "canonical_record_missing";
