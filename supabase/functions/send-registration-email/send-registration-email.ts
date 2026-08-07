@@ -46,18 +46,6 @@ async function generateCancelToken(
   return btoa(`${orgId}:${registrationId}:${hexSignature}`);
 }
 
-function publicBaseUrl(): URL {
-  const configured = Deno.env.get("BASE_URL");
-  if (configured) return new URL(configured);
-
-  const projectUrl = new URL(supabaseUrl);
-  return new URL(
-    `${projectUrl.protocol}//${
-      projectUrl.hostname.replace(".supabase.co", ".web.app")
-    }`,
-  );
-}
-
 async function loadCanonicalDelivery(
   registrationId: string,
 ): Promise<CanonicalRegistrationDelivery | null> {
@@ -88,16 +76,13 @@ async function loadCanonicalDelivery(
 Deno.serve((request: Request) =>
   handleRegistrationEmail(request, {
     serviceRoleKey,
+    baseUrl: Deno.env.get("BASE_URL") || "",
     loadCanonicalDelivery,
-    async buildCancelUrl(record) {
-      const token = await generateCancelToken(
+    generateCancelToken(record) {
+      return generateCancelToken(
         record.organization.id,
         record.registration.id,
       );
-      const url = new URL("/", publicBaseUrl());
-      url.searchParams.set("cancel", "true");
-      url.searchParams.set("token", token);
-      return url.toString();
     },
     loadSmtpPassword: (orgId) => loadSmtpPassword(client, orgId),
     deliver: (claim, send) => deliverOnce(deliveryStore, claim, send),

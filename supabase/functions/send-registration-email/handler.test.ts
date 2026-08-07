@@ -81,9 +81,8 @@ function testDependencies(
   const dependencies: RegistrationEmailDependencies = {
     serviceRoleKey,
     loadCanonicalDelivery: vi.fn(async () => canonicalDelivery()),
-    buildCancelUrl: vi.fn(async () =>
-      "https://events.example/?cancel=true&token=safe"
-    ),
+    baseUrl: "https://events.kentmethodist.org",
+    generateCancelToken: vi.fn(async () => "safe"),
     loadSmtpPassword: vi.fn(async () => "smtp-password"),
     deliver: vi.fn(async (_claim, performSend) => {
       try {
@@ -169,10 +168,48 @@ describe("handleRegistrationEmail", () => {
     expect(confirmation.html).toContain("Parking &lt;Event&gt;");
     expect(confirmation.html).toContain("Church &amp; Office");
     expect(confirmation.html).toContain("ABC&lt;123");
+    expect(confirmation.html).toContain(
+      'href="https://events.kentmethodist.org/?cancel=true&amp;token=safe"',
+    );
     expect(JSON.stringify(send.mock.calls)).not.toContain(
       "attacker@example.org",
     );
     expect(JSON.stringify(send.mock.calls)).not.toContain("attack()");
+  });
+
+  it.each([
+    ["missing", ""],
+    ["malformed", "not-a-url"],
+    ["not HTTP(S)", "ftp://events.kentmethodist.org"],
+  ])("fails safely when BASE_URL is %s", async (_case, baseUrl) => {
+    let failureCode = "";
+    const { dependencies, send } = testDependencies({
+      baseUrl,
+      deliver: vi.fn(async (_claim, performSend) => {
+        try {
+          await performSend();
+          return "sent";
+        } catch (error) {
+          failureCode = (error as Error).message;
+          return "failed";
+        }
+      }),
+    });
+
+    const response = await handleRegistrationEmail(
+      authorizedRequest({
+        type: "INSERT",
+        registration_id: "registration-1",
+      }),
+      dependencies,
+    );
+
+    expect(failureCode).toBe("base_url_not_configured");
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      to: "organizer@example.org",
+    }));
+    expect(await response.json()).toMatchObject({ failed: 1, sent: 1 });
   });
 
   it("keeps initial waitlist copy system-controlled", async () => {
