@@ -401,6 +401,9 @@ entrypoint = "./functions/send-registration-email/send-registration-email.ts"
 [functions.submit-registration]
 verify_jwt = false
 
+[functions.update-registration-answers]
+verify_jwt = true
+
 [functions.verify-cancel-token]
 verify_jwt = false
 
