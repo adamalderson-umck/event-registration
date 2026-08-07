@@ -237,7 +237,10 @@ function validateFieldValue(field: UnknownRecord, value: unknown): unknown {
   return type === 'email' ? stringValue.trim().toLowerCase() : stringValue;
 }
 
-function buildCleanFormData(event: EventRecord, rawFormData: Record<string, unknown>): Record<string, unknown> {
+export function normalizeCurrentFormData(
+  event: EventRecord,
+  rawFormData: Record<string, unknown>,
+): Record<string, unknown> {
   if (!Array.isArray(event.form_fields) || event.form_fields.length > MAX_FIELDS) invalidRequest();
 
   const clean: Record<string, unknown> = {};
@@ -420,7 +423,7 @@ export function buildRegistrationInsert(
   metadata: { ipAddress: string; userAgent: string; now?: Date },
 ): RegistrationInsert {
   assertEventAcceptsRegistration(event, request, metadata.now);
-  const formData = buildCleanFormData(event, request.formData);
+  const formData = normalizeCurrentFormData(event, request.formData);
   const payment = getPayment(event, request.paymentMethod);
   return {
     event_id: event.id,
