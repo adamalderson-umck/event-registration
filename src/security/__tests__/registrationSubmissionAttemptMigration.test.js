@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 import { describe, expect, it } from 'vitest';
 
 const migrationsDirectory = path.resolve(process.cwd(), 'supabase/migrations');

@@ -140,6 +140,18 @@ function deferred() {
     return { promise, resolve };
 }
 
+function recentRegistrationError() {
+    return {
+        context: new Response(JSON.stringify({
+            error: 'recent_registration',
+            requestId: 'request-123',
+        }), {
+            status: 409,
+            headers: { 'Content-Type': 'application/json' },
+        }),
+    };
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 describe('EventRegistrationForm', () => {
     beforeEach(() => {
@@ -231,6 +243,10 @@ describe('EventRegistrationForm', () => {
                     }),
                     paymentMethod: null,
                     signatureRecords: [],
+                    submissionAttemptId: expect.stringMatching(
+                        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+                    ),
+                    recentDuplicateOverride: false,
                 }),
             });
         });
@@ -238,6 +254,179 @@ describe('EventRegistrationForm', () => {
 
         // SuccessState renders after submit
         expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
+    });
+
+    it('preserves values and creates nothing when the user returns from a recent warning', async () => {
+        setupMocks();
+        supabase._mocks.mockInvoke.mockResolvedValueOnce({
+            data: null,
+            error: recentRegistrationError(),
+        });
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields({
+            firstName: 'Jane',
+            lastName: 'Doe',
+            email: 'jane@example.com',
+        });
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+
+        expect(await screen.findByRole('dialog', { name: 'You recently registered' }))
+            .toBeInTheDocument();
+        expect(screen.getByDisplayValue('Jane')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('Doe')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('jane@example.com')).toBeInTheDocument();
+        expect(screen.getByText(/contact the church office/i)).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Return to form' }));
+
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(supabase._mocks.mockInvoke).toHaveBeenCalledTimes(1);
+        expect(window.turnstile.reset).toHaveBeenCalledWith('widget-1');
+    });
+
+    it('continues a parking registration with the same attempt and a fresh Turnstile token', async () => {
+        let turnstileCallback;
+        window.turnstile.render.mockImplementation((_element, options) => {
+            turnstileCallback = options.callback;
+            options.callback('initial-token');
+            return 'widget-1';
+        });
+        window.turnstile.reset.mockImplementation(() => turnstileCallback('fresh-token'));
+
+        setupMocks(makeEvent({ event_type: 'parking' }));
+        supabase._mocks.mockInvoke
+            .mockResolvedValueOnce({ data: null, error: recentRegistrationError() })
+            .mockResolvedValueOnce({
+                data: {
+                    id: 'registration-2',
+                    status: 'confirmed',
+                    payment_status: 'not_required',
+                    payment_method: null,
+                },
+                error: null,
+            });
+
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+        await completeRequiredFields();
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+        await userEvent.click(await screen.findByRole('button', { name: 'Register another vehicle' }));
+
+        await waitFor(() => expect(supabase._mocks.mockInvoke).toHaveBeenCalledTimes(2));
+        const firstBody = supabase._mocks.mockInvoke.mock.calls[0][1].body;
+        const secondBody = supabase._mocks.mockInvoke.mock.calls[1][1].body;
+        expect(secondBody).toEqual(expect.objectContaining({
+            submissionAttemptId: firstBody.submissionAttemptId,
+            recentDuplicateOverride: true,
+            turnstileToken: 'fresh-token',
+        }));
+        expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
+    });
+
+    it('retains values and stops when fresh Turnstile verification fails', async () => {
+        let turnstileOptions;
+        window.turnstile.render.mockImplementation((_element, options) => {
+            turnstileOptions = options;
+            options.callback('initial-token');
+            return 'widget-1';
+        });
+        window.turnstile.reset.mockImplementation(() => turnstileOptions['error-callback']());
+
+        setupMocks();
+        supabase._mocks.mockInvoke.mockResolvedValueOnce({
+            data: null,
+            error: recentRegistrationError(),
+        });
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields({
+            firstName: 'Jane',
+            lastName: 'Doe',
+            email: 'jane@example.com',
+        });
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+        await userEvent.click(await screen.findByRole('button', { name: 'Register another person' }));
+
+        expect(supabase._mocks.mockInvoke).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'Security verification failed. Please try again.',
+        );
+        expect(screen.getByDisplayValue('jane@example.com')).toBeInTheDocument();
+    });
+
+    it('retains values and stops when fresh Turnstile verification is unavailable', async () => {
+        setupMocks();
+        supabase._mocks.mockInvoke.mockResolvedValueOnce({
+            data: null,
+            error: recentRegistrationError(),
+        });
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields({ email: 'jane@example.com' });
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+        await screen.findByRole('dialog', { name: 'You recently registered' });
+        window.turnstile.reset = undefined;
+        await userEvent.click(screen.getByRole('button', { name: 'Register another person' }));
+
+        expect(supabase._mocks.mockInvoke).toHaveBeenCalledTimes(1);
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'Security verification is unavailable. Please try again later.',
+        );
+        expect(screen.getByDisplayValue('jane@example.com')).toBeInTheDocument();
+    });
+
+    it('keeps the attempt ID after a generic failure and changes it only for Register Another', async () => {
+        setupMocks();
+        supabase._mocks.mockInvoke
+            .mockResolvedValueOnce({ data: null, error: { message: 'network failure' } })
+            .mockResolvedValueOnce({
+                data: {
+                    id: 'registration-1',
+                    status: 'confirmed',
+                    payment_status: 'not_required',
+                    payment_method: null,
+                },
+                error: null,
+            })
+            .mockResolvedValueOnce({
+                data: {
+                    id: 'registration-2',
+                    status: 'confirmed',
+                    payment_status: 'not_required',
+                    payment_method: null,
+                },
+                error: null,
+            });
+
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+        await completeRequiredFields();
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+        expect((await screen.findAllByText(/failed to submit/i)).length).toBeGreaterThan(0);
+
+        await act(async () => {
+            window.turnstile.render.mock.calls[0][1].callback('retry-token');
+        });
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /submit registration/i })).toBeEnabled();
+        });
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+        expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
+
+        const failedAttempt = supabase._mocks.mockInvoke.mock.calls[0][1].body.submissionAttemptId;
+        const retryAttempt = supabase._mocks.mockInvoke.mock.calls[1][1].body.submissionAttemptId;
+        expect(retryAttempt).toBe(failedAttempt);
+
+        await userEvent.click(screen.getByRole('button', { name: 'Register Another' }));
+        await act(async () => {
+            window.turnstile.render.mock.calls[0][1].callback('fresh-form-token');
+        });
+        await completeRequiredFields({ email: 'another@example.com' });
+        fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
+
+        await waitFor(() => expect(supabase._mocks.mockInvoke).toHaveBeenCalledTimes(3));
+        const freshAttempt = supabase._mocks.mockInvoke.mock.calls[2][1].body.submissionAttemptId;
+        expect(freshAttempt).not.toBe(failedAttempt);
     });
 
     it('routes a confirmed standard registration with Tithe.ly through the payment phase', async () => {

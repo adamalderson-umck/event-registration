@@ -54,6 +54,7 @@ Create `src/security/__tests__/registrationSubmissionAttemptMigration.test.js` w
 ```js
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 import { describe, expect, it } from 'vitest';
 
 const migrationsDirectory = path.resolve(process.cwd(), 'supabase/migrations');
@@ -1346,9 +1347,14 @@ it('keeps the attempt ID after a generic failure and changes it only for Registe
     render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
     await completeRequiredFields();
     fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
-    await screen.findByText(/failed to submit/i);
+    expect((await screen.findAllByText(/failed to submit/i)).length).toBeGreaterThan(0);
 
-    window.turnstile.render.mock.calls[0][1].callback('retry-token');
+    await act(async () => {
+        window.turnstile.render.mock.calls[0][1].callback('retry-token');
+    });
+    await waitFor(() => {
+        expect(screen.getByRole('button', { name: /submit registration/i })).toBeEnabled();
+    });
     fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
     expect(await screen.findByText(/registration submitted/i)).toBeInTheDocument();
 
@@ -1357,7 +1363,9 @@ it('keeps the attempt ID after a generic failure and changes it only for Registe
     expect(retryAttempt).toBe(failedAttempt);
 
     await userEvent.click(screen.getByRole('button', { name: 'Register Another' }));
-    window.turnstile.render.mock.calls[0][1].callback('fresh-form-token');
+    await act(async () => {
+        window.turnstile.render.mock.calls[0][1].callback('fresh-form-token');
+    });
     await completeRequiredFields({ email: 'another@example.com' });
     fireEvent.click(screen.getByRole('button', { name: /submit registration/i }));
 

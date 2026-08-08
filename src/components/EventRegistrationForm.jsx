@@ -7,9 +7,14 @@ import WaitlistNotice from './WaitlistNotice';
 import WaiverSignatureStep from './WaiverSignatureStep';
 import FormPreview from './FormPreview';
 import PaymentMethodChoice from './PaymentMethodChoice';
+import RecentRegistrationDialog from './RecentRegistrationDialog';
 import Card from './ui/Card';
 import { evaluateCondition, splitIntoPages } from '../utils/formConditions';
 import { getAvailablePaymentMethods } from '../utils/tithelyEmbed';
+import {
+    RECENT_REGISTRATION_ERROR,
+    getRegistrationSubmissionErrorCode,
+} from '../services/registrationSubmission';
 
 export default function EventRegistrationForm({ eventId, orgId }) {
     const [event, setEvent] = useState(null);
@@ -27,12 +32,22 @@ export default function EventRegistrationForm({ eventId, orgId }) {
     const [signaturesMap, setSignaturesMap] = useState({});
     const [signaturesErrors, setSignaturesErrors] = useState({});
     const [turnstileToken, setTurnstileToken] = useState(null);
+    const [recentWarningOpen, setRecentWarningOpen] = useState(false);
     const turnstileRef = useRef(null);
     const turnstileWidgetId = useRef(null);
+    const submissionAttemptId = useRef(crypto.randomUUID());
+    const pendingRecentOverride = useRef(false);
+    const performSubmissionRef = useRef(null);
     const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
     // Prevents accidental form submit when Next→Submit buttons swap at the same DOM position
     const justNavigated = useRef(false);
+
+    useEffect(() => {
+        submissionAttemptId.current = crypto.randomUUID();
+        pendingRecentOverride.current = false;
+        setRecentWarningOpen(false);
+    }, [eventId, orgId]);
 
     // Fetch event data
     useEffect(() => {
@@ -111,9 +126,29 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         turnstileWidgetId.current = window.turnstile.render(turnstileRef.current, {
             sitekey: TURNSTILE_SITE_KEY,
             action: 'event_registration',
-            callback: (token) => setTurnstileToken(token),
-            'expired-callback': () => setTurnstileToken(null),
-            'error-callback': () => setTurnstileToken(null),
+            callback: (token) => {
+                setTurnstileToken(token);
+                if (pendingRecentOverride.current) {
+                    pendingRecentOverride.current = false;
+                    void performSubmissionRef.current?.(token, true);
+                }
+            },
+            'expired-callback': () => {
+                setTurnstileToken(null);
+                if (pendingRecentOverride.current) {
+                    pendingRecentOverride.current = false;
+                    setSubmitting(false);
+                    setErrors({ _form: 'Security verification expired. Please try again.' });
+                }
+            },
+            'error-callback': () => {
+                setTurnstileToken(null);
+                if (pendingRecentOverride.current) {
+                    pendingRecentOverride.current = false;
+                    setSubmitting(false);
+                    setErrors({ _form: 'Security verification failed. Please try again.' });
+                }
+            },
             theme: 'light',
         });
     }, [TURNSTILE_SITE_KEY]);
@@ -275,27 +310,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         setCurrentPage(Math.max(0, prevPage));
     };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        // Reject submit that fired because the Submit button appeared at the same
-        // DOM position as the Next button the user just clicked (double-click race)
-        if (justNavigated.current) {
-            justNavigated.current = false;
-            return;
-        }
-        if (!validate()) return;
-
-        // CAPTCHA check — only if Turnstile is configured
-        if (!TURNSTILE_SITE_KEY || !turnstileToken) {
-            setErrors((prev) => ({
-                ...prev,
-                _form: TURNSTILE_SITE_KEY
-                    ? 'Please complete the CAPTCHA challenge.'
-                    : 'Security verification is unavailable. Please try again later.',
-            }));
-            return;
-        }
-
+    async function performSubmission(token, recentDuplicateOverride) {
         setSubmitting(true);
 
         try {
@@ -337,17 +352,27 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 'submit-registration',
                 {
                     body: {
-                        turnstileToken,
+                        turnstileToken: token,
                         eventId,
                         orgId,
                         formData: cleanFormData,
                         paymentMethod: event.payment_enabled ? paymentMethod : null,
                         signatureRecords,
+                        submissionAttemptId: submissionAttemptId.current,
+                        recentDuplicateOverride,
                     },
                 }
             );
 
-            if (insertError) throw insertError;
+            if (insertError) {
+                const errorCode = await getRegistrationSubmissionErrorCode(insertError);
+                if (errorCode === RECENT_REGISTRATION_ERROR) {
+                    setTurnstileToken(null);
+                    setRecentWarningOpen(true);
+                    return;
+                }
+                throw insertError;
+            }
             if (!created) throw new Error('Registration was created without a returned record.');
 
             setCreatedRegistration(created);
@@ -365,6 +390,32 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         } finally {
             setSubmitting(false);
         }
+    }
+
+    performSubmissionRef.current = performSubmission;
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        // Reject submit that fired because the Submit button appeared at the same
+        // DOM position as the Next button the user just clicked (double-click race)
+        if (justNavigated.current) {
+            justNavigated.current = false;
+            return;
+        }
+        if (!validate()) return;
+
+        // CAPTCHA check — only if Turnstile is configured
+        if (!TURNSTILE_SITE_KEY || !turnstileToken) {
+            setErrors((prev) => ({
+                ...prev,
+                _form: TURNSTILE_SITE_KEY
+                    ? 'Please complete the CAPTCHA challenge.'
+                    : 'Security verification is unavailable. Please try again later.',
+            }));
+            return;
+        }
+
+        await performSubmission(turnstileToken, false);
     };
 
     const handleReset = () => {
@@ -376,10 +427,41 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         setSignaturesMap({});
         setSignaturesErrors({});
         setTurnstileToken(null);
+        submissionAttemptId.current = crypto.randomUUID();
+        pendingRecentOverride.current = false;
+        setRecentWarningOpen(false);
         if (turnstileWidgetId.current !== null) {
             window.turnstile?.reset(turnstileWidgetId.current);
         }
         setPaymentMethod(availablePaymentMethods.length === 1 ? availablePaymentMethods[0] : '');
+    };
+
+    const handleRecentReturn = () => {
+        setRecentWarningOpen(false);
+        pendingRecentOverride.current = false;
+        setTurnstileToken(null);
+        if (turnstileWidgetId.current !== null) {
+            window.turnstile?.reset(turnstileWidgetId.current);
+        }
+    };
+
+    const handleRecentContinue = () => {
+        setRecentWarningOpen(false);
+        pendingRecentOverride.current = true;
+        setErrors({});
+        setTurnstileToken(null);
+        setSubmitting(true);
+        turnstileRef.current?.focus();
+
+        const resetTurnstile = window.turnstile?.reset;
+        if (turnstileWidgetId.current === null || typeof resetTurnstile !== 'function') {
+            pendingRecentOverride.current = false;
+            setSubmitting(false);
+            setErrors({ _form: 'Security verification is unavailable. Please try again later.' });
+            return;
+        }
+
+        resetTurnstile(turnstileWidgetId.current);
     };
 
     // Loading state
@@ -498,7 +580,11 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                     TURNSTILE_SITE_KEY && currentPage === pages.length - 1
                         ? (
                             <div className="mt-4">
-                                <div ref={turnstileRef} />
+                                <div
+                                    ref={turnstileRef}
+                                    tabIndex="-1"
+                                    aria-label="Security verification"
+                                />
                                 {errors._form && (
                                     <p role="alert" className="text-xs text-danger mt-2">{errors._form}</p>
                                 )}
@@ -507,6 +593,13 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                         : null
                 }
             />
+            {recentWarningOpen && (
+                <RecentRegistrationDialog
+                    eventType={event.event_type}
+                    onReturn={handleRecentReturn}
+                    onContinue={handleRecentContinue}
+                />
+            )}
         </div>
     );
 }
