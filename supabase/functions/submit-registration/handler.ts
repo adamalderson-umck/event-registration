@@ -24,9 +24,27 @@ interface EventQuery {
   };
 }
 
+type PublicRegistration = {
+  id: unknown;
+  event_id?: unknown;
+  org_id?: unknown;
+  status: unknown;
+  payment_status: unknown;
+  payment_method: unknown;
+};
+
+interface RegistrationFilterQuery {
+  eq(column: string, value: string): RegistrationFilterQuery;
+  in(column: string, values: string[]): RegistrationFilterQuery;
+  gte(column: string, value: string): RegistrationFilterQuery;
+  limit(count: number): RegistrationFilterQuery;
+  maybeSingle(): QueryResult<PublicRegistration>;
+}
+
 interface RegistrationQuery {
+  select(columns: string): RegistrationFilterQuery;
   insert(value: unknown): {
-    select(columns: string): { single(): QueryResult<Record<string, unknown>> };
+    select(columns: string): { single(): QueryResult<PublicRegistration> };
   };
 }
 
@@ -44,7 +62,12 @@ interface HandlerDependencies {
   log?: (event: Record<string, string>) => void;
   now?: () => Date;
   requestId?: () => string;
+  attemptId?: () => string;
 }
+
+const PUBLIC_REGISTRATION_COLUMNS = 'id,event_id,org_id,status,payment_status,payment_method';
+const ACTIVE_REGISTRATION_STATUSES = ['pending', 'confirmed', 'waitlisted'];
+const RECENT_REGISTRATION_WINDOW_MS = 10 * 60 * 1000;
 
 function corsHeaders(origin: string | null): HeadersInit {
   const headers: Record<string, string> = {
@@ -79,6 +102,23 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : '';
 }
 
+function publicRegistration(record: PublicRegistration): Record<string, unknown> {
+  return {
+    id: record.id,
+    status: record.status,
+    payment_status: record.payment_status,
+    payment_method: record.payment_method,
+  };
+}
+
+async function findAttempt(adminClient: RegistrationAdminClient, attemptId: string) {
+  return await adminClient.from('registrations')
+    .select(PUBLIC_REGISTRATION_COLUMNS)
+    .eq('submission_attempt_id', attemptId)
+    .limit(1)
+    .maybeSingle();
+}
+
 export function createSubmitRegistrationHandler({
   adminClient,
   turnstileSecret,
@@ -88,6 +128,7 @@ export function createSubmitRegistrationHandler({
   log = (event) => console.error(JSON.stringify(event)),
   now = () => new Date(),
   requestId = () => crypto.randomUUID(),
+  attemptId = () => crypto.randomUUID(),
 }: HandlerDependencies): (req: Request) => Promise<Response> {
   return async (req: Request): Promise<Response> => {
     const correlationId = requestId();
@@ -146,14 +187,21 @@ export function createSubmitRegistrationHandler({
       return errorResponse('registration_unavailable', 409, correlationId, origin);
     }
 
+    const requestTime = now();
+    const legacyClient = request.submissionAttemptId === null;
+    const effectiveAttemptId = request.submissionAttemptId ?? attemptId();
+
     let registrationInsert;
     try {
-      assertEventAcceptsRegistration(event, request, now());
-      registrationInsert = buildRegistrationInsert(event, request, {
-        ipAddress: trustedRequestIp(req),
-        userAgent: req.headers.get('user-agent') || '',
-        now: now(),
-      });
+      assertEventAcceptsRegistration(event, request, requestTime);
+      registrationInsert = {
+        ...buildRegistrationInsert(event, request, {
+          ipAddress: trustedRequestIp(req),
+          userAgent: req.headers.get('user-agent') || '',
+          now: requestTime,
+        }),
+        submission_attempt_id: effectiveAttemptId,
+      };
     } catch (error) {
       const code = messageOf(error);
       if (code === 'registration_unavailable') {
@@ -162,20 +210,69 @@ export function createSubmitRegistrationHandler({
       return errorResponse('invalid_request', 400, correlationId, origin);
     }
 
-    const { data: created, error: insertError } = await adminClient.from('registrations')
+    const attemptResult = await findAttempt(adminClient, effectiveAttemptId);
+    if (attemptResult.error) {
+      log({ requestId: correlationId, code: 'attempt_lookup_failed', hostname: verification.hostname });
+      return errorResponse('submission_failed', 500, correlationId, origin);
+    }
+    if (attemptResult.data) {
+      if (attemptResult.data.event_id !== request.eventId || attemptResult.data.org_id !== request.orgId) {
+        return errorResponse('invalid_request', 400, correlationId, origin);
+      }
+      return json(publicRegistration(attemptResult.data), 200, origin);
+    }
+
+    const normalizedEmail = registrationInsert.form_data.system_email;
+    if (typeof normalizedEmail !== 'string' || !normalizedEmail) {
+      return errorResponse('invalid_request', 400, correlationId, origin);
+    }
+
+    if (!legacyClient && !request.recentDuplicateOverride) {
+      const cutoff = new Date(requestTime.getTime() - RECENT_REGISTRATION_WINDOW_MS).toISOString();
+      const recentResult = await adminClient.from('registrations')
+        .select('id')
+        .eq('org_id', request.orgId)
+        .eq('event_id', request.eventId)
+        .eq('form_data->>system_email', normalizedEmail)
+        .in('status', ACTIVE_REGISTRATION_STATUSES)
+        .gte('created_at', cutoff)
+        .limit(1)
+        .maybeSingle();
+
+      if (recentResult.error) {
+        log({
+          requestId: correlationId,
+          code: 'recent_registration_lookup_failed',
+          hostname: verification.hostname,
+        });
+        return errorResponse('submission_failed', 500, correlationId, origin);
+      }
+      if (recentResult.data) {
+        return errorResponse('recent_registration', 409, correlationId, origin);
+      }
+    }
+
+    const { data: createdRecord, error: insertError } = await adminClient.from('registrations')
       .insert(registrationInsert)
-      .select('id,status,payment_status,payment_method')
+      .select(PUBLIC_REGISTRATION_COLUMNS)
       .single();
-    if (insertError || !created) {
+
+    if (insertError || !createdRecord) {
+      const recoveredAttempt = await findAttempt(adminClient, effectiveAttemptId);
+      if (!recoveredAttempt.error && recoveredAttempt.data) {
+        if (
+          recoveredAttempt.data.event_id !== request.eventId ||
+          recoveredAttempt.data.org_id !== request.orgId
+        ) {
+          return errorResponse('invalid_request', 400, correlationId, origin);
+        }
+        return json(publicRegistration(recoveredAttempt.data), 200, origin);
+      }
+
       log({ requestId: correlationId, code: 'registration_insert_failed', hostname: verification.hostname });
       return errorResponse('submission_failed', 500, correlationId, origin);
     }
 
-    return json({
-      id: created.id,
-      status: created.status,
-      payment_status: created.payment_status,
-      payment_method: created.payment_method,
-    }, 200, origin);
+    return json(publicRegistration(createdRecord), 200, origin);
   };
 }
