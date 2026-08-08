@@ -16,6 +16,8 @@ const TOP_LEVEL_KEYS = new Set([
   'formData',
   'paymentMethod',
   'signatureRecords',
+  'submissionAttemptId',
+  'recentDuplicateOverride',
 ]);
 const SIGNATURE_KEYS = new Set([
   'waiverId',
@@ -56,6 +58,8 @@ export interface RegistrationRequest {
   formData: Record<string, unknown>;
   paymentMethod: string | null;
   signatureRecords: SignatureDecision[];
+  submissionAttemptId: string | null;
+  recentDuplicateOverride: boolean;
 }
 
 export interface EventRecord extends UnknownRecord {
@@ -114,6 +118,10 @@ export function parseRegistrationRequest(value: unknown): RegistrationRequest {
     invalidRequest();
   }
 
+  const hasSubmissionAttemptId = Object.hasOwn(value, 'submissionAttemptId');
+  const hasRecentDuplicateOverride = Object.hasOwn(value, 'recentDuplicateOverride');
+  if (hasSubmissionAttemptId !== hasRecentDuplicateOverride) invalidRequest();
+
   const {
     turnstileToken,
     eventId,
@@ -121,13 +129,17 @@ export function parseRegistrationRequest(value: unknown): RegistrationRequest {
     formData,
     paymentMethod,
     signatureRecords,
+    submissionAttemptId,
+    recentDuplicateOverride,
   } = value;
 
   if (
     typeof turnstileToken !== 'string' || !turnstileToken || turnstileToken.length > MAX_TOKEN_LENGTH ||
     !isUuid(eventId) || !isUuid(orgId) ||
     !isRecord(formData) || !Array.isArray(signatureRecords) ||
-    (paymentMethod !== null && typeof paymentMethod !== 'string')
+    (paymentMethod !== null && typeof paymentMethod !== 'string') ||
+    (hasSubmissionAttemptId && !isUuid(submissionAttemptId)) ||
+    (hasRecentDuplicateOverride && typeof recentDuplicateOverride !== 'boolean')
   ) {
     invalidRequest();
   }
@@ -139,6 +151,8 @@ export function parseRegistrationRequest(value: unknown): RegistrationRequest {
     formData,
     paymentMethod,
     signatureRecords: signatureRecords as SignatureDecision[],
+    submissionAttemptId: hasSubmissionAttemptId ? submissionAttemptId as string : null,
+    recentDuplicateOverride: hasRecentDuplicateOverride ? recentDuplicateOverride as boolean : false,
   };
 }
 

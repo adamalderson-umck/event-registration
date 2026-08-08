@@ -8,6 +8,7 @@ import {
 const EVENT_ID = '11111111-1111-4111-8111-111111111111';
 const ORG_ID = '22222222-2222-4222-8222-222222222222';
 const TITHELY_FORM_ID = '33333333-3333-4333-8333-333333333333';
+const ATTEMPT_ID = '55555555-5555-4555-8555-555555555555';
 
 const baseRequest = {
   turnstileToken: 'verified-token',
@@ -29,6 +30,8 @@ const baseRequest = {
     signatureMethod: 'draw',
     signatureData: 'data:image/png;base64,c2lnbmF0dXJl',
   }],
+  submissionAttemptId: ATTEMPT_ID,
+  recentDuplicateOverride: false,
 };
 
 const baseEvent = {
@@ -64,8 +67,31 @@ const metadata = {
 };
 
 describe('parseRegistrationRequest', () => {
-  it('accepts the exact public request shape', () => {
+  it('accepts the current public request shape', () => {
     expect(parseRegistrationRequest(baseRequest)).toEqual(baseRequest);
+  });
+
+  it('normalizes the cached-legacy shape only when both new fields are absent', () => {
+    const { submissionAttemptId, recentDuplicateOverride, ...legacyRequest } = baseRequest;
+
+    expect(parseRegistrationRequest(legacyRequest)).toEqual({
+      ...legacyRequest,
+      submissionAttemptId: null,
+      recentDuplicateOverride: false,
+    });
+  });
+
+  it('rejects malformed or incomplete attempt contracts', () => {
+    expect(() => parseRegistrationRequest({ ...baseRequest, submissionAttemptId: 'not-a-uuid' }))
+      .toThrow('invalid_request');
+    expect(() => parseRegistrationRequest({ ...baseRequest, recentDuplicateOverride: 'yes' }))
+      .toThrow('invalid_request');
+
+    const { recentDuplicateOverride, ...missingOverride } = baseRequest;
+    expect(() => parseRegistrationRequest(missingOverride)).toThrow('invalid_request');
+
+    const { submissionAttemptId, ...overrideWithoutAttempt } = baseRequest;
+    expect(() => parseRegistrationRequest(overrideWithoutAttempt)).toThrow('invalid_request');
   });
 
   it('rejects unexpected top-level fields', () => {
@@ -130,6 +156,13 @@ describe('buildRegistrationInsert', () => {
         userAgent: 'Test Browser',
       }],
     });
+
+    const normalizedResult = buildRegistrationInsert(baseEvent, {
+      ...baseRequest,
+      formData: { ...baseRequest.formData, system_email: '  PERSON@Example.COM ' },
+    }, metadata);
+
+    expect(normalizedResult.form_data.system_email).toBe('person@example.com');
   });
 
   it('rejects unknown and conditionally hidden form fields', () => {
