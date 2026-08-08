@@ -29,7 +29,7 @@ Do not use IP addresses, names, phone numbers, vehicle fields, signature records
 ## File Map
 
 - Create through `npx supabase migration new add_registration_submission_attempt`: the exact CLI-generated migration path, bound to `$migrationPath` immediately after generation. Do not invent or preselect the 14-digit version.
-- Create `src/security/__tests__/registrationSubmissionAttemptMigration.test.js`: migration contract and permission-regression coverage.
+- Create `src/security/__tests__/registrationSubmissionAttemptMigration.test.js`: attempt-column, active recent-lookup index, and permission-regression coverage.
 - Modify `supabase/functions/_shared/registration-request.ts`: accept the current-client attempt/override pair, normalize the cached-legacy shape, and retain the exact-key request boundary.
 - Modify `supabase/functions/_shared/registration-request.test.ts`: request-shape, legacy compatibility, malformed-pair, and normalization coverage.
 - Modify `supabase/functions/submit-registration/handler.ts`: attempt lookup, recent-registration lookup, sanitized `409`, insert-race recovery, and safe failure behavior.
@@ -41,7 +41,7 @@ Do not use IP addresses, names, phone numbers, vehicle fields, signature records
 - Modify `src/components/EventRegistrationForm.jsx`: stable attempt lifecycle, warning state, fresh-Turnstile continuation, error classification, and dialog integration.
 - Modify `src/components/__tests__/EventRegistrationForm.test.jsx`: request contract, state preservation, override, Turnstile, retry, and attempt-rotation coverage.
 
-### Task 1: Add the Database Attempt Identifier
+### Task 1: Add the Database Attempt Identifier and Recent-Lookup Index
 
 **Files:**
 - Create via Supabase CLI: `$migrationPath`, the one exact path printed by `npx supabase migration new add_registration_submission_attempt`
@@ -76,6 +76,12 @@ describe('registration submission attempt migration', () => {
         );
         expect(sql).toMatch(
             /add constraint registrations_submission_attempt_id_key unique\s*\(submission_attempt_id\)/i,
+        );
+    });
+
+    it('indexes the active same-event normalized-email time-window lookup', () => {
+        expect(sql).toMatch(
+            /create index registrations_recent_active_email_idx\s+on public\.registrations\s*\(org_id, event_id, \(\(form_data->>'system_email'\)\), created_at desc\)\s*where status in \('pending', 'confirmed', 'waitlisted'\)/i,
         );
     });
 
@@ -121,9 +127,18 @@ ALTER TABLE public.registrations
 ALTER TABLE public.registrations
   ADD CONSTRAINT registrations_submission_attempt_id_key
   UNIQUE (submission_attempt_id);
+
+CREATE INDEX registrations_recent_active_email_idx
+  ON public.registrations (
+    org_id,
+    event_id,
+    ((form_data->>'system_email')),
+    created_at DESC
+  )
+  WHERE status IN ('pending', 'confirmed', 'waitlisted');
 ```
 
-Do not add grants, policies, triggers, functions, or an email/IP index. PostgreSQL evaluates the generated UUID default for existing rows and retains it for admin/CSV inserts that omit the new column.
+The authorized partial composite expression index matches the handler's equality filters first, its creation-time range last, and only the three active statuses used by the warning query. Do not add grants, policies, triggers, functions, an IP index, or any broader JSON index. PostgreSQL evaluates the generated UUID default for existing rows and retains it for admin/CSV inserts that omit the new column.
 
 - [ ] **Step 5: Verify the migration contract and repository migration rules**
 
