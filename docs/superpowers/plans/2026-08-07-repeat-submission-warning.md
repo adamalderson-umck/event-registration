@@ -943,9 +943,11 @@ describe('RecentRegistrationDialog', () => {
 
         expect(screen.getByRole('dialog', { name: 'You recently registered' }))
             .toHaveAttribute('aria-modal', 'true');
-        expect(screen.getByText(/within the last 10 minutes/i)).toBeInTheDocument();
-        expect(screen.getByText(/contact the church office/i)).toBeInTheDocument();
-        expect(screen.getByText(new RegExp(subject, 'i'))).toBeInTheDocument();
+        const instruction = screen.getByText(/within the last 10 minutes/i);
+        expect(instruction).toHaveTextContent(/contact the church office/i);
+        expect(instruction).toHaveTextContent(
+            new RegExp(`If you are registering ${subject}, you may continue`, 'i'),
+        );
         expect(screen.getByRole('button', { name: action })).toBeInTheDocument();
         expect(screen.queryByRole('link')).not.toBeInTheDocument();
     });
