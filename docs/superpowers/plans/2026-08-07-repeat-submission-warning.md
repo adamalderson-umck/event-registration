@@ -75,13 +75,13 @@ describe('registration submission attempt migration', () => {
             /alter table public\.registrations[\s\S]*add column submission_attempt_id uuid not null default gen_random_uuid\(\)/i,
         );
         expect(sql).toMatch(
-            /add constraint registrations_submission_attempt_id_key unique\s*\(submission_attempt_id\)/i,
+            /add constraint registrations_submission_attempt_id_key\s+unique\s*\(submission_attempt_id\)/i,
         );
     });
 
     it('indexes the active same-event normalized-email time-window lookup', () => {
         expect(sql).toMatch(
-            /create index registrations_recent_active_email_idx\s+on public\.registrations\s*\(org_id, event_id, \(\(form_data->>'system_email'\)\), created_at desc\)\s*where status in \('pending', 'confirmed', 'waitlisted'\)/i,
+            /create index registrations_recent_active_email_idx\s+on public\.registrations\s*\(\s*org_id\s*,\s*event_id\s*,\s*\(\(form_data->>'system_email'\)\)\s*,\s*created_at desc\s*\)\s*where status in \('pending', 'confirmed', 'waitlisted'\)/i,
         );
     });
 
