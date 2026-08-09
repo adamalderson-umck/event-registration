@@ -8,6 +8,9 @@ import viteConfig from '../vite.config.js';
 const firebaseConfig = JSON.parse(
   readFileSync(new URL('../firebase.json', import.meta.url), 'utf8'),
 );
+const packageJson = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+);
 
 function cacheControlFor(source) {
   const rule = firebaseConfig.hosting.headers.find(item => item.source === source);
@@ -36,5 +39,14 @@ describe('widget build cache configuration', () => {
     );
     expect(cacheControlFor('/assets/**')).toBeUndefined();
     expect(cacheControlFor('index.html')).toBe('no-cache');
+  });
+
+  it('runs the cache validator after every production build', () => {
+    expect(packageJson.scripts['check:widget-cache']).toBe(
+      'node tools/check-widget-cache-contract.mjs',
+    );
+    expect(packageJson.scripts.build).toBe(
+      'vite build && npm run check:widget-cache',
+    );
   });
 });
