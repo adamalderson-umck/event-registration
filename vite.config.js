@@ -11,14 +11,14 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        // Widget-friendly filenames for WordPress embedding
+        // WordPress references these two stable entry filenames directly.
         entryFileNames: 'assets/events-widget.js',
-        chunkFileNames: 'assets/events-widget-[name].js',
+        chunkFileNames: 'assets/versioned/events-widget-[name]-[hash].js',
         assetFileNames: (assetInfo) => {
           if (assetInfo.name && assetInfo.name.endsWith('.css')) {
             return 'assets/events-style.css';
           }
-          return 'assets/[name].[ext]';
+          return 'assets/versioned/[name]-[hash][extname]';
         },
       },
     },

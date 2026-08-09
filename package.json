@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && npm run check:widget-cache",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "check:migrations": "node tools/check-supabase-migrations.mjs",
+    "check:widget-cache": "node tools/check-widget-cache-contract.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",
     "deploy": "npm run build && firebase deploy --only hosting",
     "deploy:preview": "npm run build && firebase hosting:channel:deploy preview"
