@@ -71,6 +71,35 @@ function dependencies(overrides: Record<string, unknown> = {}) {
 }
 
 describe('update-registration-answers handler', () => {
+  it('answers browser preflight requests for the production origin', async () => {
+    const response = await createUpdateRegistrationAnswersHandler(dependencies())(
+      new Request('https://example.test/update-registration-answers', {
+        method: 'OPTIONS',
+        headers: { Origin: 'https://events.kentmethodist.org' },
+      }),
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
+      'https://events.kentmethodist.org',
+    );
+    expect(response.headers.get('Access-Control-Allow-Methods')).toBe('POST, OPTIONS');
+    expect(response.headers.get('Access-Control-Allow-Headers')).toContain('authorization');
+    expect(response.headers.get('Vary')).toBe('Origin');
+  });
+
+  it('includes the production origin on POST responses', async () => {
+    const response = await createUpdateRegistrationAnswersHandler(dependencies())(
+      post(body, { Origin: 'https://events.kentmethodist.org' }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
+      'https://events.kentmethodist.org',
+    );
+    expect(response.headers.get('Vary')).toBe('Origin');
+  });
+
   it('uses trusted identity and canonical values for a successful edit', async () => {
     const deps = dependencies();
     const response = await createUpdateRegistrationAnswersHandler(deps)(post());
