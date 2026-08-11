@@ -45,9 +45,9 @@ const DEPLOYED_FUNCTIONS = Object.freeze({
         hash: 'e439e792d708bb5bdf6910a8a7b363716773731016496f39bd55a8852ba25cd9',
     },
     'update-registration-answers': {
-        version: 1,
+        version: 2,
         verifyJwt: true,
-        hash: '334319f520d556bf8808fd756209ed0d0f1bb46f5f338b6bef9148ddfdf4c383',
+        hash: '7ec13dd0132d9211aac6ddcdb639c5c9868318ad58fb31b9170959d800f337c3',
     },
 });
 
