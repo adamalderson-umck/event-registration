@@ -43,11 +43,29 @@ interface Dependencies {
 }
 
 const MAX_BODY_BYTES = 1024 * 1024;
+const ALLOWED_ORIGINS = new Set([
+  'https://events.kentmethodist.org',
+  'https://event-registration-b7840.web.app',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+]);
 
-function json(body: unknown, status = 200): Response {
+function corsHeaders(origin: string | null): HeadersInit {
+  const headers: Record<string, string> = {
+    Vary: 'Origin',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
+  return headers;
+}
+
+function json(body: unknown, status = 200, origin: string | null = null): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
   });
 }
 
@@ -73,34 +91,39 @@ async function parseBody(req: Request): Promise<unknown> {
 export function createUpdateRegistrationAnswersHandler(deps: Dependencies) {
   return async (req: Request): Promise<Response> => {
     const requestId = deps.requestId?.() ?? crypto.randomUUID();
+    const origin = req.headers.get('origin');
+    const respond = (body: unknown, status = 200) => json(body, status, origin);
 
+    if (req.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+    }
     if (req.method !== 'POST') {
-      return json({ error: 'method_not_allowed' }, 405);
+      return respond({ error: 'method_not_allowed' }, 405);
     }
     if (!req.headers.get('authorization')) {
-      return json({ error: 'not_authorized' }, 401);
+      return respond({ error: 'not_authorized' }, 401);
     }
 
     try {
       const user = await deps.authenticate(req);
-      if (!user) return json({ error: 'not_authorized' }, 401);
+      if (!user) return respond({ error: 'not_authorized' }, 401);
 
       const declaredLength = Number(req.headers.get('content-length') || 0);
       if (!Number.isFinite(declaredLength) || declaredLength > MAX_BODY_BYTES) {
-        return json({ error: 'invalid_request' }, 400);
+        return respond({ error: 'invalid_request' }, 400);
       }
 
       const request = parseRegistrationAnswerEditRequest(await parseBody(req));
       if (!await deps.isMember(request.orgId, user.id)) {
-        return json({ error: 'not_found' }, 404);
+        return respond({ error: 'not_found' }, 404);
       }
 
       const registration = await deps.loadRegistration(request.registrationId);
       if (!registration || registration.org_id !== request.orgId) {
-        return json({ error: 'not_found' }, 404);
+        return respond({ error: 'not_found' }, 404);
       }
       if (registration.status === 'cancelled') {
-        return json({ error: 'registration_cancelled' }, 409);
+        return respond({ error: 'registration_cancelled' }, 409);
       }
 
       const event = await deps.loadEvent(registration.event_id);
@@ -109,10 +132,10 @@ export function createUpdateRegistrationAnswersHandler(deps: Dependencies) {
         || event.id !== registration.event_id
         || event.org_id !== request.orgId
       ) {
-        return json({ error: 'not_found' }, 404);
+        return respond({ error: 'not_found' }, 404);
       }
       if (!valuesMatch(registration.form_data, request.expectedFormData)) {
-        return json({ error: 'edit_conflict' }, 409);
+        return respond({ error: 'edit_conflict' }, 409);
       }
 
       const prepared = prepareRegistrationAnswerEdit(
@@ -121,7 +144,7 @@ export function createUpdateRegistrationAnswersHandler(deps: Dependencies) {
         request.answers,
       );
       if (prepared.changes.length === 0) {
-        return json({ registration, edit: null });
+        return respond({ registration, edit: null });
       }
 
       const result = await deps.applyEdit({
@@ -139,19 +162,19 @@ export function createUpdateRegistrationAnswersHandler(deps: Dependencies) {
         const code = typeof result.code === 'string'
           ? result.code
           : 'save_failed';
-        return json({ error: code }, responseStatus(code));
+        return respond({ error: code }, responseStatus(code));
       }
 
-      return json({
+      return respond({
         registration: result.registration,
         edit: result.edit,
       });
     } catch (error) {
       if (error instanceof Error && error.message === 'invalid_request') {
-        return json({ error: 'invalid_request' }, 400);
+        return respond({ error: 'invalid_request' }, 400);
       }
       deps.log?.({ requestId, code: 'save_failed' });
-      return json({ error: 'save_failed', requestId }, 500);
+      return respond({ error: 'save_failed', requestId }, 500);
     }
   };
 }
