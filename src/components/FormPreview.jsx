@@ -1,10 +1,60 @@
-import React from 'react';
+import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 import { CalendarDays, MapPin, Users, ChevronLeft, ChevronRight, Send } from 'lucide-react';
 import DynamicField from './DynamicField';
 import FormStepper from './FormStepper';
 import Button from './ui/Button';
 import { evaluateCondition, splitIntoPages } from '../utils/formConditions';
 import { resolveTheme, resolveHeaderImage } from '../constants/themePresets';
+
+function EventDescription({ description }) {
+    const descriptionId = useId();
+    const descriptionRef = useRef(null);
+    const [expanded, setExpanded] = useState(false);
+    const [canExpand, setCanExpand] = useState(false);
+
+    useLayoutEffect(() => {
+        const element = descriptionRef.current;
+        if (!element || expanded) return undefined;
+
+        const measureOverflow = () => {
+            setCanExpand(element.scrollHeight > element.clientHeight + 1);
+        };
+
+        measureOverflow();
+
+        if (typeof ResizeObserver !== 'undefined') {
+            const observer = new ResizeObserver(measureOverflow);
+            observer.observe(element);
+            return () => observer.disconnect();
+        }
+
+        window.addEventListener('resize', measureOverflow);
+        return () => window.removeEventListener('resize', measureOverflow);
+    }, [description, expanded]);
+
+    return (
+        <>
+            <p
+                ref={descriptionRef}
+                id={descriptionId}
+                className={`text-white/90 text-xs sm:text-sm leading-relaxed ${canExpand ? 'mb-1' : 'mb-3 sm:mb-4'} ${expanded ? '' : 'line-clamp-2 md:line-clamp-4'}`}
+            >
+                {description}
+            </p>
+            {canExpand && (
+                <button
+                    type="button"
+                    className="mb-3 sm:mb-4 text-xs sm:text-sm font-semibold text-white underline underline-offset-2 hover:text-white/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                    aria-controls={descriptionId}
+                    aria-expanded={expanded}
+                    onClick={() => setExpanded((value) => !value)}
+                >
+                    {expanded ? 'Show less' : 'Show more'}
+                </button>
+            )}
+        </>
+    );
+}
 
 /**
  * Pure presentational renderer for an event registration form.
@@ -87,17 +137,17 @@ export default function FormPreview({
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden" style={themeVars}>
             {/* Event Header */}
             {headerImage ? (
-                <div className="relative" style={{ aspectRatio: '16/9' }}>
+                <div className="relative grid" style={{ aspectRatio: '16/9' }}>
                     <img
                         src={headerImage}
                         alt={event.title}
-                        className="w-full h-full object-cover"
+                        className="absolute inset-0 w-full h-full object-cover"
                     />
                     <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/60 to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 p-4 sm:px-6 sm:py-6 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                    <div className="relative z-10 self-end p-4 sm:px-6 sm:py-6 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                         <h1 className="text-xl sm:text-2xl font-bold mb-1 sm:mb-2 leading-tight">{event.title || 'Untitled Event'}</h1>
                         {event.description && (
-                            <p className="text-white/90 text-xs sm:text-sm mb-3 sm:mb-4 leading-relaxed line-clamp-2 md:line-clamp-4">{event.description}</p>
+                            <EventDescription description={event.description} />
                         )}
                         <div className="flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm text-white/90 font-medium">
                             {event.start_date && (
@@ -135,7 +185,7 @@ export default function FormPreview({
                 >
                     <h1 className="text-xl sm:text-2xl font-bold mb-1 sm:mb-2 leading-tight">{event.title || 'Untitled Event'}</h1>
                     {event.description && (
-                        <p className="text-white/90 text-xs sm:text-sm mb-3 sm:mb-4 leading-relaxed line-clamp-2 md:line-clamp-4">{event.description}</p>
+                        <EventDescription description={event.description} />
                     )}
                     <div className="flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm text-white/90 font-medium">
                         {event.start_date && (

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import FormPreview from '../FormPreview';
 
@@ -59,6 +59,31 @@ describe('FormPreview', () => {
         render(<FormPreview event={baseEvent} readOnly={true} />);
         expect(screen.getByText('VBS 2026')).toBeInTheDocument();
         expect(screen.getByText('Come join us for Vacation Bible School!')).toBeInTheDocument();
+    });
+
+    it('lets users expand a description when the responsive line clamp clips it', () => {
+        const scrollHeight = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(100);
+        const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(40);
+
+        render(
+            <FormPreview
+                event={{ ...baseEvent, header_image_url: 'https://example.com/header.jpg' }}
+                readOnly={true}
+            />,
+        );
+
+        const description = screen.getByText('Come join us for Vacation Bible School!');
+        const toggle = screen.getByRole('button', { name: 'Show more' });
+        expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        expect(description).toHaveClass('line-clamp-2', 'md:line-clamp-4');
+
+        fireEvent.click(toggle);
+
+        expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+        expect(description).not.toHaveClass('line-clamp-2', 'md:line-clamp-4');
+
+        scrollHeight.mockRestore();
+        clientHeight.mockRestore();
     });
 
     it('renders event location and date', () => {
