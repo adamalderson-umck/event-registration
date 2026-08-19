@@ -149,6 +149,50 @@ describe('RegistrationViewer', () => {
         expect(cells).toEqual(['Alex', 'Signed', 'Declined', 'confirmed', 'Not required', 'View']);
     });
 
+    it('filters registrations by form answers without crashing', async () => {
+        const user = userEvent.setup();
+        supabase._mocks.mockOrder.mockResolvedValue({
+            data: [
+                {
+                    id: 'registration-1',
+                    status: 'confirmed',
+                    payment_status: 'not_required',
+                    payment_recorded_total: 0,
+                    registration_payments: [],
+                    form_data: { name: 'Alex' },
+                    signature_records: [],
+                },
+                {
+                    id: 'registration-2',
+                    status: 'confirmed',
+                    payment_status: 'not_required',
+                    payment_recorded_total: 0,
+                    registration_payments: [],
+                    form_data: { name: 'Morgan' },
+                    signature_records: [],
+                },
+            ],
+            error: null,
+        });
+
+        render(
+            <RegistrationViewer
+                orgId="org-1"
+                eventId="event-1"
+                event={event}
+                onBack={vi.fn()}
+            />
+        );
+
+        expect(await screen.findByText('Alex')).toBeInTheDocument();
+        expect(screen.getByText('Morgan')).toBeInTheDocument();
+
+        await user.type(screen.getByPlaceholderText('Search registrations...'), 'Morgan');
+
+        expect(screen.queryByText('Alex')).not.toBeInTheDocument();
+        expect(screen.getByText('Morgan')).toBeInTheDocument();
+    });
+
     it('records a check payment and preserves the registrant-selected method', async () => {
         const user = userEvent.setup();
         const pendingRegistration = {
