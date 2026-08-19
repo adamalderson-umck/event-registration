@@ -118,12 +118,16 @@ function AppContent() {
   // Listen for auth state changes (handles OAuth redirect return)
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const params = new URLSearchParams(window.location.search);
+      const path = window.location.pathname;
+      const isAdminRoute = path === '/admin' || path.startsWith('/admin/') || params.get('admin') === 'true';
+
       if (event === 'SIGNED_IN' && session) {
-        const params = new URLSearchParams(window.location.search);
-        const path = window.location.pathname;
-        if (path === '/admin' || path.startsWith('/admin/') || params.get('admin') === 'true') {
+        if (isAdminRoute) {
           resolveAdminAccess().then(setView);
         }
+      } else if (event === 'SIGNED_OUT' && isAdminRoute) {
+        setView('admin-login');
       }
     });
 
