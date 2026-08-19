@@ -45,13 +45,14 @@ describe('parking pass finalization service', () => {
     });
   });
 
-  it.each(['not_eligible', 'finalization_conflict', 'forbidden'])
-  ('preserves the stable %s response code', async (code) => {
-    mocks.rpc.mockResolvedValue({ data: { ok: false, code }, error: null });
-    await expect(setParkingPassFinalization({
-      registrationId: 'registration-1', orgId: 'org-1', finalized: true,
-    })).rejects.toMatchObject({ code });
-  });
+  it.each(['not_eligible', 'finalization_conflict', 'forbidden'])(
+    'preserves the stable %s response code', async (code) => {
+      mocks.rpc.mockResolvedValue({ data: { ok: false, code }, error: null });
+      await expect(setParkingPassFinalization({
+        registrationId: 'registration-1', orgId: 'org-1', finalized: true,
+      })).rejects.toMatchObject({ code });
+    },
+  );
 
   it('maps transport failures without exposing database details', async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: new Error('private detail') });
