@@ -1,17 +1,28 @@
 import React from 'react';
 import { PARKING_FIELD_IDS } from '../config/eventPresets';
 import {
+    canFinalizeParkingPass,
     canPrintParkingPass,
+    canUndoParkingPassFinalization,
     getParkingFieldValue,
     getParkingPassStatus,
     getParkingVehicleLabel,
 } from '../utils/parkingRegistration';
 import { canRecordRegistrationPayment, formatPaymentSummary } from '../utils/paymentStatus';
+import ParkingRegistrationActionsMenu from './ParkingRegistrationActionsMenu';
 import Card from './ui/Card';
 
 const columnClassName = 'px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide';
 
-export default function ParkingRegistrationTable({ registrations, onView, onRecordPayment, onPrintPass }) {
+export default function ParkingRegistrationTable({
+    registrations,
+    onView,
+    onRecordPayment,
+    onPrintPass,
+    onFinalize,
+    onUndoFinalization,
+    busyRegistrationId,
+}) {
     return (
         <Card className="overflow-hidden">
             <div className="overflow-x-auto">
@@ -58,33 +69,18 @@ export default function ParkingRegistrationTable({ registrations, onView, onReco
                                         {getParkingPassStatus(registration)}
                                     </td>
                                     <td className="px-4 py-3 text-sm text-slate-700">
-                                        <div className="flex items-center gap-3">
-                                            <button
-                                                type="button"
-                                                onClick={() => onView(registration)}
-                                                className="text-primary hover:text-primary-dark font-medium cursor-pointer"
-                                            >
-                                                View
-                                            </button>
-                                            {eligibleToRecordPayment && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => onRecordPayment(registration)}
-                                                    className="text-primary hover:text-primary-dark font-medium cursor-pointer"
-                                                >
-                                                    Record Payment
-                                                </button>
-                                            )}
-                                            {canPrintParkingPass(registration) && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => onPrintPass(registration)}
-                                                    className="text-primary hover:text-primary-dark font-medium cursor-pointer"
-                                                >
-                                                    Print Pass
-                                                </button>
-                                            )}
-                                        </div>
+                                        <ParkingRegistrationActionsMenu
+                                            onView={() => onView(registration)}
+                                            onRecordPayment={() => onRecordPayment(registration)}
+                                            onPrintPass={() => onPrintPass(registration)}
+                                            onFinalize={() => onFinalize(registration)}
+                                            onUndoFinalization={() => onUndoFinalization(registration)}
+                                            canRecordPayment={eligibleToRecordPayment}
+                                            canPrint={canPrintParkingPass(registration)}
+                                            canFinalize={canFinalizeParkingPass(registration)}
+                                            canUndo={canUndoParkingPassFinalization(registration)}
+                                            disabled={busyRegistrationId === registration.id}
+                                        />
                                     </td>
                                 </tr>
                             );

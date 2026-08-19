@@ -1,6 +1,7 @@
 import { PARKING_FIELD_IDS } from '../config/eventPresets';
 
 export const PARKING_PASS_STATUS = Object.freeze({
+    FINALIZED: 'Finalized',
     VALID: 'Valid',
     PAYMENT_PENDING: 'Payment pending',
     WAITLISTED: 'Waitlisted',
@@ -25,6 +26,10 @@ export function getParkingVehicleLabel(registration) {
 }
 
 export function getParkingPassStatus(registration) {
+    if (registration?.parking_pass_finalized_at) {
+        return PARKING_PASS_STATUS.FINALIZED;
+    }
+
     if (registration?.status === 'waitlisted') {
         return PARKING_PASS_STATUS.WAITLISTED;
     }
@@ -45,5 +50,13 @@ export function getParkingPassStatus(registration) {
 }
 
 export function canPrintParkingPass(registration) {
+    return canFinalizeParkingPass(registration);
+}
+
+export function canFinalizeParkingPass(registration) {
     return getParkingPassStatus(registration) === PARKING_PASS_STATUS.VALID;
+}
+
+export function canUndoParkingPassFinalization(registration) {
+    return Boolean(registration?.parking_pass_finalized_at);
 }

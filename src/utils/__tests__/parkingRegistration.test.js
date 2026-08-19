@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { PARKING_FIELD_IDS } from '../../config/eventPresets';
 import {
     PARKING_PASS_STATUS,
+    canFinalizeParkingPass,
     canPrintParkingPass,
+    canUndoParkingPassFinalization,
     getParkingFieldValue,
     getParkingPassStatus,
     getParkingVehicleLabel,
@@ -49,5 +51,26 @@ describe('parking registration helpers', () => {
         expect(canPrintParkingPass(registration())).toBe(true);
         expect(canPrintParkingPass(registration({ payment_status: 'pending' }))).toBe(false);
         expect(canPrintParkingPass(registration({ payment_status: 'partial' }))).toBe(false);
+    });
+
+    it('shows Finalized independently of later registration status', () => {
+        const finalized = {
+            parking_pass_finalized_at: '2026-08-19T14:30:00Z',
+            parking_pass_finalized_by_name: 'Admin User',
+        };
+        expect(getParkingPassStatus(registration(finalized))).toBe(PARKING_PASS_STATUS.FINALIZED);
+        expect(getParkingPassStatus(registration({ ...finalized, status: 'cancelled' })))
+            .toBe(PARKING_PASS_STATUS.FINALIZED);
+    });
+
+    it('allows finalization and printing only for unfinalized valid passes', () => {
+        const valid = registration();
+        const finalized = registration({ parking_pass_finalized_at: '2026-08-19T14:30:00Z' });
+        expect(canFinalizeParkingPass(valid)).toBe(true);
+        expect(canPrintParkingPass(valid)).toBe(true);
+        expect(canUndoParkingPassFinalization(valid)).toBe(false);
+        expect(canFinalizeParkingPass(finalized)).toBe(false);
+        expect(canPrintParkingPass(finalized)).toBe(false);
+        expect(canUndoParkingPassFinalization(finalized)).toBe(true);
     });
 });

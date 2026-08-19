@@ -8,10 +8,14 @@ const {
     downloadCsvMock,
     downloadPaymentLedgerCsvMock,
     updateRegistrationAnswersMock,
+    printParkingPassMock,
+    setParkingPassFinalizationMock,
 } = vi.hoisted(() => ({
     downloadCsvMock: vi.fn(),
     downloadPaymentLedgerCsvMock: vi.fn(),
     updateRegistrationAnswersMock: vi.fn(),
+    printParkingPassMock: vi.fn(),
+    setParkingPassFinalizationMock: vi.fn(),
 }));
 
 vi.mock('../../utils/exportCsv', () => ({
@@ -23,9 +27,23 @@ vi.mock('../../services/registrationAnswerEdits', () => ({
     updateRegistrationAnswers: updateRegistrationAnswersMock,
 }));
 
+vi.mock('../../utils/parkingPass', () => ({
+    printParkingPass: printParkingPassMock,
+}));
+
+vi.mock('../../services/parkingPassFinalization', () => ({
+    setParkingPassFinalization: setParkingPassFinalizationMock,
+}));
+
 vi.mock('../RegistrationEditHistory', () => ({
     default: ({ refreshKey }) => (
         <div data-testid="edit-history">history-{refreshKey}</div>
+    ),
+}));
+
+vi.mock('../ParkingPassFinalizationHistory', () => ({
+    default: ({ refreshKey }) => (
+        <div data-testid="parking-pass-history">pass-history-{refreshKey}</div>
     ),
 }));
 
@@ -123,6 +141,8 @@ describe('RegistrationViewer', () => {
             error: null,
         });
         updateRegistrationAnswersMock.mockReset();
+        printParkingPassMock.mockReset();
+        setParkingPassFinalizationMock.mockReset();
     });
 
     it('renders Waiver and Media before Status, with Payment before Actions', async () => {
@@ -462,9 +482,197 @@ describe('RegistrationViewer', () => {
             />
         );
 
-        await user.click(await screen.findByRole('button', { name: 'Record Payment' }));
+        await user.click(await screen.findByRole('button', { name: 'Actions' }));
+        await user.click(screen.getByRole('menuitem', { name: 'Record Payment' }));
 
         expect(await screen.findByRole('dialog', { name: 'Record payment' })).toBeInTheDocument();
+    });
+
+    it('prompts after printing and finalizes from the authoritative RPC response', async () => {
+        const user = userEvent.setup();
+        const valid = { ...parkingRegistration, payment_status: 'paid' };
+        const finalized = {
+            ...valid,
+            parking_pass_finalized_at: '2026-08-19T14:30:00Z',
+            parking_pass_finalized_by: 'user-1',
+            parking_pass_finalized_by_name: 'Admin User',
+        };
+        supabase._mocks.mockOrder.mockResolvedValue({ data: [valid], error: null });
+        printParkingPassMock.mockResolvedValue();
+        setParkingPassFinalizationMock.mockResolvedValue({
+            registration: finalized,
+            event: { id: 'audit-1' },
+        });
+
+        render(
+            <RegistrationViewer
+                orgId="org-1"
+                eventId="event-1"
+                event={parkingEvent}
+                organizationName="Kent Methodist Church"
+                onBack={vi.fn()}
+            />
+        );
+
+        await user.click(await screen.findByRole('button', { name: 'Actions' }));
+        await user.click(screen.getByRole('menuitem', { name: 'Print Pass' }));
+        expect(await screen.findByRole('dialog', { name: 'Finalize printed parking pass?' }))
+            .toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Finalize' }));
+        expect(setParkingPassFinalizationMock).toHaveBeenCalledWith({
+            registrationId: valid.id,
+            orgId: 'org-1',
+            finalized: true,
+            expectedFinalizedAt: null,
+        });
+        expect(await screen.findByText('Finalized')).toBeInTheDocument();
+    });
+
+    it('supports manual finalization without printing', async () => {
+        const user = userEvent.setup();
+        const valid = { ...parkingRegistration, payment_status: 'paid' };
+        const finalized = {
+            ...valid,
+            parking_pass_finalized_at: '2026-08-19T14:30:00Z',
+            parking_pass_finalized_by_name: 'Admin User',
+        };
+        supabase._mocks.mockOrder.mockResolvedValue({ data: [valid], error: null });
+        setParkingPassFinalizationMock.mockResolvedValue({
+            registration: finalized,
+            event: { id: 'audit-1' },
+        });
+
+        render(
+            <RegistrationViewer
+                orgId="org-1"
+                eventId="event-1"
+                event={parkingEvent}
+                onBack={vi.fn()}
+            />
+        );
+
+        await user.click(await screen.findByRole('button', { name: 'Actions' }));
+        await user.click(screen.getByRole('menuitem', { name: 'Finalize' }));
+        expect(screen.getByRole('dialog', { name: 'Finalize parking pass?' })).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Finalize' }));
+        expect(printParkingPassMock).not.toHaveBeenCalled();
+        expect(await screen.findByText('Finalized')).toBeInTheDocument();
+    });
+
+    it('confirms undo and restores valid actions', async () => {
+        const user = userEvent.setup();
+        const finalized = {
+            ...parkingRegistration,
+            payment_status: 'paid',
+            parking_pass_finalized_at: '2026-08-19T14:30:00Z',
+            parking_pass_finalized_by_name: 'Admin User',
+        };
+        const reopened = {
+            ...finalized,
+            parking_pass_finalized_at: null,
+            parking_pass_finalized_by: null,
+            parking_pass_finalized_by_name: null,
+        };
+        supabase._mocks.mockOrder.mockResolvedValue({ data: [finalized], error: null });
+        setParkingPassFinalizationMock.mockResolvedValue({
+            registration: reopened,
+            event: { id: 'audit-2' },
+        });
+
+        render(
+            <RegistrationViewer
+                orgId="org-1"
+                eventId="event-1"
+                event={parkingEvent}
+                onBack={vi.fn()}
+            />
+        );
+
+        await user.click(await screen.findByRole('button', { name: 'Actions' }));
+        await user.click(screen.getByRole('menuitem', { name: 'Undo Finalization' }));
+        await user.click(screen.getByRole('button', { name: 'Undo Finalization' }));
+        expect(setParkingPassFinalizationMock).toHaveBeenCalledWith({
+            registrationId: finalized.id,
+            orgId: 'org-1',
+            finalized: false,
+            expectedFinalizedAt: '2026-08-19T14:30:00Z',
+        });
+        expect(await screen.findByText('Valid')).toBeInTheDocument();
+    });
+
+    it('keeps the prompt open and maps an eligibility race', async () => {
+        const user = userEvent.setup();
+        const valid = { ...parkingRegistration, payment_status: 'paid' };
+        supabase._mocks.mockOrder.mockResolvedValue({ data: [valid], error: null });
+        setParkingPassFinalizationMock.mockRejectedValue(
+            Object.assign(new Error('not_eligible'), { code: 'not_eligible' }),
+        );
+
+        render(
+            <RegistrationViewer
+                orgId="org-1"
+                eventId="event-1"
+                event={parkingEvent}
+                onBack={vi.fn()}
+            />
+        );
+
+        await user.click(await screen.findByRole('button', { name: 'Actions' }));
+        await user.click(screen.getByRole('menuitem', { name: 'Finalize' }));
+        await user.click(screen.getByRole('button', { name: 'Finalize' }));
+        expect(await screen.findByRole('alert'))
+            .toHaveTextContent('This pass is no longer eligible to be finalized.');
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('shows finalizer details and pass history in the parking detail view', async () => {
+        const user = userEvent.setup();
+        const finalized = {
+            ...parkingRegistration,
+            payment_status: 'paid',
+            parking_pass_finalized_at: '2026-08-19T14:30:00Z',
+            parking_pass_finalized_by_name: 'Admin User',
+        };
+        supabase._mocks.mockOrder.mockResolvedValue({ data: [finalized], error: null });
+
+        render(
+            <RegistrationViewer
+                orgId="org-1"
+                eventId="event-1"
+                event={parkingEvent}
+                onBack={vi.fn()}
+            />
+        );
+
+        await user.click(await screen.findByRole('button', { name: 'Actions' }));
+        await user.click(screen.getByRole('menuitem', { name: 'View' }));
+        expect(screen.getByText('Pass status: Finalized')).toBeInTheDocument();
+        expect(screen.getByText(/Finalized by Admin User/)).toBeInTheDocument();
+        expect(screen.getByTestId('parking-pass-history')).toBeInTheDocument();
+    });
+
+    it('leaves a printed pass Valid when staff chooses Not yet', async () => {
+        const user = userEvent.setup();
+        const valid = { ...parkingRegistration, payment_status: 'paid' };
+        supabase._mocks.mockOrder.mockResolvedValue({ data: [valid], error: null });
+        printParkingPassMock.mockResolvedValue();
+
+        render(
+            <RegistrationViewer
+                orgId="org-1"
+                eventId="event-1"
+                event={parkingEvent}
+                organizationName="Kent Methodist Church"
+                onBack={vi.fn()}
+            />
+        );
+
+        await user.click(await screen.findByRole('button', { name: 'Actions' }));
+        await user.click(screen.getByRole('menuitem', { name: 'Print Pass' }));
+        await user.click(await screen.findByRole('button', { name: 'Not yet' }));
+        expect(setParkingPassFinalizationMock).not.toHaveBeenCalled();
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(screen.getByText('Valid')).toBeInTheDocument();
     });
 
     it.each(['confirmed', 'pending', 'waitlisted'])(
@@ -543,7 +751,8 @@ describe('RegistrationViewer', () => {
             organizationName="Kent Methodist Church"
             onBack={vi.fn()}
         />);
-        await user.click(await screen.findByRole('button', { name: /view/i }));
+        await user.click(await screen.findByRole('button', { name: 'Actions' }));
+        await user.click(screen.getByRole('menuitem', { name: 'View' }));
         expect(screen.getByTestId('edit-history')).toHaveTextContent('history-0');
         await user.click(screen.getByRole('button', { name: 'Edit Answers' }));
         const plate = screen.getByLabelText(/^License Plate/);

@@ -16,6 +16,8 @@ import Input from './ui/Input';
 import Select from './ui/Select';
 import SignatureViewer from './SignatureViewer';
 import ParkingRegistrationTable from './ParkingRegistrationTable';
+import ParkingPassFinalizationDialog from './ParkingPassFinalizationDialog';
+import ParkingPassFinalizationHistory from './ParkingPassFinalizationHistory';
 import RecordPaymentDialog from './RecordPaymentDialog';
 import PaymentHistory from './PaymentHistory';
 import RegistrationAnswerEditor from './RegistrationAnswerEditor';
@@ -25,6 +27,8 @@ import { downloadCsv, downloadPaymentLedgerCsv } from '../utils/exportCsv';
 import { processCsvFile } from '../utils/importCsv';
 import { getRegistrationWaiverStatuses } from '../utils/registrationWaiverStatus';
 import { printParkingPass } from '../utils/parkingPass';
+import { getParkingPassStatus } from '../utils/parkingRegistration';
+import { setParkingPassFinalization } from '../services/parkingPassFinalization';
 import {
     canRecordRegistrationPayment,
     formatRecordPaymentError,
@@ -36,6 +40,14 @@ const answerSaveMessages = {
     registration_cancelled: 'This registration was cancelled and is now read-only.',
     invalid_request: 'Correct the highlighted registration answers and try again.',
     save_failed: 'Unable to save these changes. Your draft has been kept; please try again.',
+};
+
+const finalizationMessages = {
+    not_eligible: 'This pass is no longer eligible to be finalized.',
+    finalization_conflict: 'Another staff member already changed this pass. Refresh and try again.',
+    forbidden: 'You no longer have access to manage this organization.',
+    not_authenticated: 'Your session expired. Sign in and try again.',
+    transition_failed: 'Unable to update this pass. Please try again.',
 };
 
 export default function RegistrationViewer({ orgId, eventId, event, organizationName, onBack }) {
@@ -55,6 +67,10 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
     const [savingAnswers, setSavingAnswers] = useState(false);
     const [answerSaveError, setAnswerSaveError] = useState('');
     const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+    const [finalizationDialog, setFinalizationDialog] = useState(null);
+    const [savingFinalization, setSavingFinalization] = useState(false);
+    const [finalizationError, setFinalizationError] = useState('');
+    const [parkingHistoryRefreshKey, setParkingHistoryRefreshKey] = useState(0);
 
     // Import states
     const fileInputRef = useRef(null);
@@ -139,18 +155,34 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
         }
     };
 
-    const applyPaymentResult = (result) => {
-        const updated = {
-            ...result.registration,
-            registration_payments: result.payments || [],
-        };
-
+    const replaceRegistration = (updated) => {
         setRegistrations((current) => current.map((item) => (
-            item.id === updated.id ? updated : item
+            item.id === updated.id
+                ? {
+                    ...item,
+                    ...updated,
+                    registration_payments: updated.registration_payments
+                        || item.registration_payments
+                        || [],
+                }
+                : item
         )));
-        setSelectedReg((current) => current?.id === updated.id ? updated : current);
+        setSelectedReg((current) => current?.id === updated.id
+            ? {
+                ...current,
+                ...updated,
+                registration_payments: updated.registration_payments
+                    || current.registration_payments
+                    || [],
+            }
+            : current);
         return updated;
     };
+
+    const applyPaymentResult = (result) => replaceRegistration({
+        ...result.registration,
+        registration_payments: result.payments || [],
+    });
 
     const handleRecordPayment = async (values) => {
         if (!paymentDialogRegistration || recordingPayment) return;
@@ -204,13 +236,52 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
         }
     };
 
-    const handlePrintParkingPass = (registration) => {
+    const openFinalizationDialog = (registration, mode) => {
+        setFinalizationError('');
+        setFinalizationDialog({ registration, mode });
+    };
+
+    const handlePrintParkingPass = async (registration) => {
         try {
-            printParkingPass(registration, event, organizationName);
+            await printParkingPass(registration, event, organizationName);
+            openFinalizationDialog(registration, 'post-print');
         } catch (err) {
             console.error('Failed to print parking pass:', err);
             setCancelError(err.message || 'Unable to print this parking pass.');
         }
+    };
+
+    const handleParkingFinalization = async () => {
+        if (!finalizationDialog || savingFinalization) return;
+
+        setSavingFinalization(true);
+        setFinalizationError('');
+        const finalized = finalizationDialog.mode !== 'undo';
+        try {
+            const result = await setParkingPassFinalization({
+                registrationId: finalizationDialog.registration.id,
+                orgId,
+                finalized,
+                expectedFinalizedAt: finalized
+                    ? null
+                    : finalizationDialog.registration.parking_pass_finalized_at,
+            });
+            replaceRegistration(result.registration);
+            setParkingHistoryRefreshKey((value) => value + 1);
+            setFinalizationDialog(null);
+        } catch (error) {
+            setFinalizationError(
+                finalizationMessages[error.code] || finalizationMessages.transition_failed,
+            );
+        } finally {
+            setSavingFinalization(false);
+        }
+    };
+
+    const closeFinalizationDialog = () => {
+        if (savingFinalization) return;
+        setFinalizationDialog(null);
+        setFinalizationError('');
     };
 
     const handleFileSelect = async (e) => {
@@ -490,6 +561,19 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                             error={paymentError}
                         />
                     </div>}
+                    {event?.event_type === 'parking' && !editingAnswers && (
+                        <div className="mt-4 border-t border-slate-200 pt-4 text-sm text-slate-700">
+                            <p className="font-semibold text-slate-900">
+                                Pass status: {getParkingPassStatus(selectedReg)}
+                            </p>
+                            {selectedReg.parking_pass_finalized_at && (
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Finalized by {selectedReg.parking_pass_finalized_by_name} on{' '}
+                                    {new Date(selectedReg.parking_pass_finalized_at).toLocaleString()}
+                                </p>
+                            )}
+                        </div>
+                    )}
                     {!editingAnswers && <div className="mt-4 text-xs text-slate-400">
                         <p>Submitted: {selectedReg.created_at
                             ? new Date(selectedReg.created_at).toLocaleString()
@@ -504,6 +588,13 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                         refreshKey={historyRefreshKey}
                     />
                 )}
+                {!editingAnswers && event?.event_type === 'parking' && (
+                    <ParkingPassFinalizationHistory
+                        registrationId={selectedReg.id}
+                        orgId={orgId}
+                        refreshKey={parkingHistoryRefreshKey}
+                    />
+                )}
                 {paymentDialogRegistration && (
                     <RecordPaymentDialog
                         registration={paymentDialogRegistration}
@@ -511,6 +602,16 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                         onClose={() => setPaymentDialogRegistration(null)}
                         submitting={recordingPayment}
                         error={paymentError}
+                    />
+                )}
+                {finalizationDialog && (
+                    <ParkingPassFinalizationDialog
+                        registration={finalizationDialog.registration}
+                        mode={finalizationDialog.mode}
+                        saving={savingFinalization}
+                        error={finalizationError}
+                        onConfirm={handleParkingFinalization}
+                        onClose={closeFinalizationDialog}
                     />
                 )}
             </div>
@@ -625,6 +726,11 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                     onView={setSelectedReg}
                     onRecordPayment={setPaymentDialogRegistration}
                     onPrintPass={handlePrintParkingPass}
+                    onFinalize={(registration) => openFinalizationDialog(registration, 'finalize')}
+                    onUndoFinalization={(registration) => openFinalizationDialog(registration, 'undo')}
+                    busyRegistrationId={savingFinalization
+                        ? finalizationDialog?.registration.id
+                        : null}
                 />
             ) : (
                 <Card className="overflow-hidden">
@@ -707,6 +813,17 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                     onClose={() => setPaymentDialogRegistration(null)}
                     submitting={recordingPayment}
                     error={paymentError}
+                />
+            )}
+
+            {finalizationDialog && (
+                <ParkingPassFinalizationDialog
+                    registration={finalizationDialog.registration}
+                    mode={finalizationDialog.mode}
+                    saving={savingFinalization}
+                    error={finalizationError}
+                    onConfirm={handleParkingFinalization}
+                    onClose={closeFinalizationDialog}
                 />
             )}
 

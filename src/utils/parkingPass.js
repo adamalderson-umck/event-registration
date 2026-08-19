@@ -151,6 +151,17 @@ export function printParkingPass(registration, event, organization) {
     printWindow.document.close();
     return waitForPrintAssets(printWindow).then(() => {
         printWindow.focus();
-        printWindow.print();
+        let closed = false;
+        const closePreview = () => {
+            if (closed) return;
+            closed = true;
+            printWindow.close();
+        };
+        printWindow.addEventListener?.('afterprint', closePreview, { once: true });
+        try {
+            printWindow.print();
+        } finally {
+            closePreview();
+        }
     });
 }
