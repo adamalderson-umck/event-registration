@@ -30,7 +30,13 @@ function registration(overrides = {}) {
 }
 
 function makePrintWindow({ fontsReady = Promise.resolve(), images = [] } = {}) {
-    return { document: { write: vi.fn(), close: vi.fn(), fonts: { ready: fontsReady }, images }, focus: vi.fn(), print: vi.fn() };
+    return {
+        document: { write: vi.fn(), close: vi.fn(), fonts: { ready: fontsReady }, images },
+        focus: vi.fn(),
+        print: vi.fn(),
+        close: vi.fn(),
+        addEventListener: vi.fn(),
+    };
 }
 
 describe('parking passes', () => {
@@ -137,6 +143,36 @@ describe('parking passes', () => {
         await printParkingPass(registration(), event, 'Kent Methodist Church');
 
         expect(open).toHaveBeenCalledWith('', '_blank', 'width=900,height=900,resizable=yes,scrollbars=yes');
+    });
+
+    it('closes the temporary preview after the native print call returns', async () => {
+        const printWindow = makePrintWindow();
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        await printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        expect(printWindow.print).toHaveBeenCalledOnce();
+        expect(printWindow.close).toHaveBeenCalledOnce();
+        expect(printWindow.print.mock.invocationCallOrder[0])
+            .toBeLessThan(printWindow.close.mock.invocationCallOrder[0]);
+        expect(printWindow.addEventListener).toHaveBeenCalledWith(
+            'afterprint', expect.any(Function), { once: true },
+        );
+    });
+
+    it('does not close the preview while print assets are pending', async () => {
+        let resolveFonts;
+        const printWindow = makePrintWindow({
+            fontsReady: new Promise((resolve) => { resolveFonts = resolve; }),
+        });
+        vi.spyOn(window, 'open').mockReturnValue(printWindow);
+
+        const result = printParkingPass(registration(), event, 'Kent Methodist Church');
+
+        expect(printWindow.close).not.toHaveBeenCalled();
+        resolveFonts();
+        await result;
+        expect(printWindow.close).toHaveBeenCalledOnce();
     });
 
     it('waits for fonts and images before focusing and printing', async () => {
