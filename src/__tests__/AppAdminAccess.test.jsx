@@ -1,18 +1,26 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { auth, rpc } = vi.hoisted(() => ({
-  auth: {
-    getSession: vi.fn(),
-    getUser: vi.fn(),
-    onAuthStateChange: vi.fn(() => ({
-      data: { subscription: { unsubscribe: vi.fn() } },
-    })),
-    signOut: vi.fn(),
-  },
-  rpc: vi.fn(),
-}));
+const { auth, authState, rpc } = vi.hoisted(() => {
+  const authState = { callback: null };
+
+  return {
+    authState,
+    auth: {
+      getSession: vi.fn(),
+      getUser: vi.fn(),
+      onAuthStateChange: vi.fn((callback) => {
+        authState.callback = callback;
+        return {
+          data: { subscription: { unsubscribe: vi.fn() } },
+        };
+      }),
+      signOut: vi.fn(),
+    },
+    rpc: vi.fn(),
+  };
+});
 
 vi.mock('../services/supabase', () => ({
   supabase: { auth, rpc },
@@ -31,6 +39,7 @@ import App from '../App';
 describe('admin access routing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.callback = null;
     window.history.replaceState({}, '', '/admin');
   });
 
@@ -70,5 +79,22 @@ describe('admin access routing', () => {
 
     expect(await screen.findByText('Admin login')).toBeInTheDocument();
     await waitFor(() => expect(rpc).not.toHaveBeenCalled());
+  });
+
+  it('returns a mounted admin dashboard to login when the session signs out', async () => {
+    auth.getUser.mockResolvedValue({
+      data: { user: { id: 'allowed-user', email: 'admin@kentmethodist.org' } },
+      error: null,
+    });
+    rpc.mockResolvedValue({ data: true, error: null });
+
+    render(<App />);
+
+    expect(await screen.findByText('Admin dashboard')).toBeInTheDocument();
+
+    act(() => authState.callback('SIGNED_OUT', null));
+
+    expect(await screen.findByText('Admin login')).toBeInTheDocument();
+    expect(screen.queryByText('Admin dashboard')).not.toBeInTheDocument();
   });
 });

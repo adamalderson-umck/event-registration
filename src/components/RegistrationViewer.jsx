@@ -272,6 +272,14 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
             setImporting(false);
         }
     };
+    const getFormData = (reg) => {
+        if (!reg?.form_data) return {};
+        if (typeof reg.form_data === 'string') {
+            try { return JSON.parse(reg.form_data); } catch { return {}; }
+        }
+        return reg.form_data;
+    };
+
     const formFields = useMemo(() => event?.form_fields || [], [event?.form_fields]);
 
     // Filtered registrations
@@ -309,14 +317,6 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
         if (val === null || val === undefined || val === '') return '—';
         if (Array.isArray(val)) return val.join(', ');
         return String(val);
-    };
-
-    const getFormData = (reg) => {
-        if (!reg?.form_data) return {};
-        if (typeof reg.form_data === 'string') {
-            try { return JSON.parse(reg.form_data); } catch { return {}; }
-        }
-        return reg.form_data;
     };
 
     const discardAnswerDraft = () => (
