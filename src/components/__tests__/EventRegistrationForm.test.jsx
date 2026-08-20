@@ -128,7 +128,7 @@ async function completeRequiredFields({ firstName = 'John', lastName = 'Doe', em
     await userEvent.type(screen.getByLabelText(/last name/i), lastName);
     await userEvent.type(screen.getByLabelText(/email/i), email);
     await waitFor(() => {
-        expect(screen.getByRole('button', { name: /submit registration/i })).toBeEnabled();
+        expect(screen.getByRole('button', { name: /submit registration|join waitlist/i })).toBeEnabled();
     });
 }
 
@@ -144,6 +144,18 @@ function recentRegistrationError() {
     return {
         context: new Response(JSON.stringify({
             error: 'recent_registration',
+            requestId: 'request-123',
+        }), {
+            status: 409,
+            headers: { 'Content-Type': 'application/json' },
+        }),
+    };
+}
+
+function availabilityChangedError() {
+    return {
+        context: new Response(JSON.stringify({
+            error: 'availability_changed',
             requestId: 'request-123',
         }), {
             status: 409,
@@ -663,6 +675,64 @@ describe('EventRegistrationForm', () => {
         render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
         // Form still renders — waitlist join path
         expect(await screen.findByLabelText(/first name/i)).toBeInTheDocument();
+    });
+
+    it('joins a full paid waitlist without selecting payment', async () => {
+        setupMocks(makeEvent({
+            payment_enabled: true,
+            allow_in_person_payment: true,
+            tithely_giving_url: `https://give.tithe.ly/?formId=${TITHELY_FORM_ID}`,
+            tithely_embed_config: { formId: TITHELY_FORM_ID },
+            capacity: 10,
+            registration_count: 10,
+            waitlist_enabled: true,
+        }));
+        supabase._mocks.mockInvoke.mockResolvedValue({
+            data: {
+                id: 'registration-1',
+                status: 'waitlisted',
+                payment_status: 'not_required',
+                payment_method: null,
+            },
+            error: null,
+        });
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields();
+        expect(screen.queryByText('Payment Method')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Join Waitlist' }));
+
+        await waitFor(() => expect(supabase._mocks.mockInvoke).toHaveBeenCalledWith(
+            'submit-registration',
+            { body: expect.objectContaining({ paymentMethod: null, waitlistIntent: true }) },
+        ));
+    });
+
+    it('refreshes availability after a waitlist race while preserving entered values', async () => {
+        const fullEvent = makeEvent({
+            payment_enabled: true,
+            allow_in_person_payment: true,
+            capacity: 10,
+            registration_count: 10,
+            waitlist_enabled: true,
+        });
+        setupMocks(fullEvent);
+        supabase._mocks.mockSingle
+            .mockReset()
+            .mockResolvedValueOnce({ data: fullEvent, error: null })
+            .mockResolvedValue({ data: { ...fullEvent, registration_count: 9 }, error: null });
+        supabase._mocks.mockInvoke.mockResolvedValueOnce({
+            data: null,
+            error: availabilityChangedError(),
+        });
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+
+        await completeRequiredFields({ email: 'preserved@example.com' });
+        fireEvent.click(screen.getByRole('button', { name: 'Join Waitlist' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Availability changed while you were registering');
+        expect(await screen.findByText('Payment Method')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('preserved@example.com')).toBeInTheDocument();
     });
 
     it('submits signature_records[] for multi-waiver events', async () => {

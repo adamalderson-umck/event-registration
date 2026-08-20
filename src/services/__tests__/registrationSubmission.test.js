@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    AVAILABILITY_CHANGED_ERROR,
     RECENT_REGISTRATION_ERROR,
     getRegistrationSubmissionErrorCode,
 } from '../registrationSubmission';
@@ -20,6 +21,19 @@ describe('getRegistrationSubmissionErrorCode', () => {
             error: RECENT_REGISTRATION_ERROR,
             requestId: 'request-123',
         });
+    });
+
+    it('reads the stable availability-changed error code', async () => {
+        const context = new Response(JSON.stringify({
+            error: AVAILABILITY_CHANGED_ERROR,
+            requestId: 'request-456',
+        }), {
+            status: 409,
+            headers: { 'Content-Type': 'application/json' },
+        });
+
+        await expect(getRegistrationSubmissionErrorCode({ context }))
+            .resolves.toBe(AVAILABILITY_CHANGED_ERROR);
     });
 
     it.each([
