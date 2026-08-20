@@ -73,7 +73,11 @@ describe('parseRegistrationRequest', () => {
   });
 
   it('normalizes the cached-legacy shape only when both new fields are absent', () => {
-    const { submissionAttemptId, recentDuplicateOverride, ...legacyRequest } = baseRequest;
+    const {
+      submissionAttemptId: _submissionAttemptId,
+      recentDuplicateOverride: _recentDuplicateOverride,
+      ...legacyRequest
+    } = baseRequest;
 
     expect(parseRegistrationRequest(legacyRequest)).toEqual({
       ...legacyRequest,
@@ -98,10 +102,10 @@ describe('parseRegistrationRequest', () => {
     expect(() => parseRegistrationRequest({ ...baseRequest, recentDuplicateOverride: 'yes' }))
       .toThrow('invalid_request');
 
-    const { recentDuplicateOverride, ...missingOverride } = baseRequest;
+    const { recentDuplicateOverride: _recentDuplicateOverride, ...missingOverride } = baseRequest;
     expect(() => parseRegistrationRequest(missingOverride)).toThrow('invalid_request');
 
-    const { submissionAttemptId, ...overrideWithoutAttempt } = baseRequest;
+    const { submissionAttemptId: _submissionAttemptId, ...overrideWithoutAttempt } = baseRequest;
     expect(() => parseRegistrationRequest(overrideWithoutAttempt)).toThrow('invalid_request');
   });
 

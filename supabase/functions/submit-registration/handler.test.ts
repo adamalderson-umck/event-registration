@@ -45,7 +45,7 @@ function makeAdminClient({
   insertData = created,
   insertError = null,
 } = {}) {
-  const eventSingle = vi.fn(async () => ({ data: eventData, error: eventError }));
+  const eventSingle = vi.fn(() => Promise.resolve({ data: eventData, error: eventError }));
   const eventEq2 = vi.fn(() => ({ single: eventSingle }));
   const eventEq1 = vi.fn(() => ({ eq: eventEq2 }));
   const eventSelect = vi.fn(() => ({ eq: eventEq1 }));
@@ -60,7 +60,7 @@ function makeAdminClient({
     maybeSingle,
   };
   const registrationSelect = vi.fn(() => lookupChain);
-  const insertSingle = vi.fn(async () => ({ data: insertData, error: insertError }));
+  const insertSingle = vi.fn(() => Promise.resolve({ data: insertData, error: insertError }));
   const insertSelect = vi.fn(() => ({ single: insertSingle }));
   const insert = vi.fn(() => ({ select: insertSelect }));
   const from = vi.fn((table: string) => table === 'events'
@@ -100,7 +100,7 @@ function post(body: unknown = requestBody, headers: Record<string, string> = {})
 
 function setup(adminOverrides = {}) {
   const { client, mocks } = makeAdminClient(adminOverrides);
-  const verifyTurnstileFn = vi.fn(async () => ({
+  const verifyTurnstileFn = vi.fn(() => Promise.resolve({
     success: true as const,
     hostname: 'events.kentmethodist.org',
     action: 'event_registration',

@@ -81,13 +81,13 @@ function authorizedRequest(
 function testDependencies(
   overrides: Partial<RegistrationEmailDependencies> = {},
 ) {
-  const send = vi.fn(async () => undefined);
+  const send = vi.fn(() => Promise.resolve());
   const dependencies: RegistrationEmailDependencies = {
     serviceRoleKey,
-    loadCanonicalDelivery: vi.fn(async () => canonicalDelivery()),
+    loadCanonicalDelivery: vi.fn(() => Promise.resolve(canonicalDelivery())),
     baseUrl: "https://events.kentmethodist.org",
-    generateCancelToken: vi.fn(async () => "safe"),
-    loadSmtpPassword: vi.fn(async () => "smtp-password"),
+    generateCancelToken: vi.fn(() => Promise.resolve("safe")),
+    loadSmtpPassword: vi.fn(() => Promise.resolve("smtp-password")),
     deliver: vi.fn(async (_claim, performSend) => {
       try {
         await performSend();
@@ -220,7 +220,7 @@ describe("handleRegistrationEmail", () => {
     const record = canonicalDelivery();
     record.registration.status = "waitlisted";
     const { dependencies, send } = testDependencies({
-      loadCanonicalDelivery: vi.fn(async () => record),
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(record)),
     });
 
     await handleRegistrationEmail(
@@ -258,7 +258,7 @@ describe("handleRegistrationEmail", () => {
     record.registration.status = newStatus;
     record.registration.updated_at = "2026-08-07T12:00:00Z";
     const { dependencies, send } = testDependencies({
-      loadCanonicalDelivery: vi.fn(async () => record),
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(record)),
     });
 
     await handleRegistrationEmail(
@@ -287,7 +287,7 @@ describe("handleRegistrationEmail", () => {
     record.event.tithely_giving_url = "https://give.tithe.ly/?formId=11111111-1111-4111-8111-111111111111";
     record.event.tithely_embed_config = { formId: "11111111-1111-4111-8111-111111111111" };
     const { dependencies, send } = testDependencies({
-      loadCanonicalDelivery: vi.fn(async () => record),
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(record)),
     });
 
     await handleRegistrationEmail(
@@ -315,7 +315,7 @@ describe("handleRegistrationEmail", () => {
     record.event.tithely_giving_url = "https://evil.example/pay";
     record.event.tithely_embed_config = { formId: "11111111-1111-4111-8111-111111111111" };
     const { dependencies, send } = testDependencies({
-      loadCanonicalDelivery: vi.fn(async () => record),
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(record)),
     });
 
     await handleRegistrationEmail(
@@ -352,7 +352,7 @@ describe("handleRegistrationEmail", () => {
     delete record.registration.form_data.system_email;
     record.event.notifications = null;
     const { dependencies, send } = testDependencies({
-      loadCanonicalDelivery: vi.fn(async () => record),
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(record)),
     });
 
     const response = await handleRegistrationEmail(
@@ -388,7 +388,7 @@ describe("handleRegistrationEmail", () => {
     mutate(record);
     let failureCode = "";
     const { dependencies } = testDependencies({
-      loadCanonicalDelivery: vi.fn(async () => record),
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(record)),
       deliver: vi.fn(async (_claim, performSend) => {
         try {
           await performSend();
@@ -417,7 +417,7 @@ describe("handleRegistrationEmail", () => {
 
   it("returns a fixed skip code when canonical records are missing", async () => {
     const { dependencies } = testDependencies({
-      loadCanonicalDelivery: vi.fn(async () => null),
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(null)),
     });
 
     const response = await handleRegistrationEmail(
@@ -435,7 +435,7 @@ describe("handleRegistrationEmail", () => {
   });
 
   it("suppresses already-sent logical deliveries", async () => {
-    const deliver = vi.fn(async () => "already_sent" as const);
+    const deliver = vi.fn(() => Promise.resolve("already_sent" as const));
     const { dependencies, send } = testDependencies({ deliver });
 
     const response = await handleRegistrationEmail(
