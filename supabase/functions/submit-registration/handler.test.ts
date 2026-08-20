@@ -11,6 +11,7 @@ const requestBody = {
   orgId: ORG_ID,
   formData: { system_email: 'Person@Example.com' },
   paymentMethod: null,
+  waitlistIntent: false,
   signatureRecords: [],
   submissionAttemptId: ATTEMPT_ID,
   recentDuplicateOverride: false,
@@ -20,6 +21,9 @@ const event = {
   org_id: ORG_ID,
   status: 'active',
   registration_close_date: null,
+  capacity: null,
+  registration_count: 0,
+  waitlist_enabled: false,
   payment_enabled: false,
   allow_in_person_payment: false,
   tithely_giving_url: null,
@@ -41,7 +45,7 @@ function makeAdminClient({
   insertData = created,
   insertError = null,
 } = {}) {
-  const eventSingle = vi.fn(async () => ({ data: eventData, error: eventError }));
+  const eventSingle = vi.fn(() => Promise.resolve({ data: eventData, error: eventError }));
   const eventEq2 = vi.fn(() => ({ single: eventSingle }));
   const eventEq1 = vi.fn(() => ({ eq: eventEq2 }));
   const eventSelect = vi.fn(() => ({ eq: eventEq1 }));
@@ -56,7 +60,7 @@ function makeAdminClient({
     maybeSingle,
   };
   const registrationSelect = vi.fn(() => lookupChain);
-  const insertSingle = vi.fn(async () => ({ data: insertData, error: insertError }));
+  const insertSingle = vi.fn(() => Promise.resolve({ data: insertData, error: insertError }));
   const insertSelect = vi.fn(() => ({ single: insertSingle }));
   const insert = vi.fn(() => ({ select: insertSelect }));
   const from = vi.fn((table: string) => table === 'events'
@@ -96,7 +100,7 @@ function post(body: unknown = requestBody, headers: Record<string, string> = {})
 
 function setup(adminOverrides = {}) {
   const { client, mocks } = makeAdminClient(adminOverrides);
-  const verifyTurnstileFn = vi.fn(async () => ({
+  const verifyTurnstileFn = vi.fn(() => Promise.resolve({
     success: true as const,
     hostname: 'events.kentmethodist.org',
     action: 'event_registration',
@@ -176,6 +180,25 @@ describe('submit-registration HTTP handler', () => {
       signature_records: [],
       submission_attempt_id: ATTEMPT_ID,
     });
+  });
+
+  it('accepts deferred payment for a full enabled waitlist', async () => {
+    const waitlistEvent = {
+      ...event,
+      payment_enabled: true,
+      capacity: 10,
+      registration_count: 10,
+      waitlist_enabled: true,
+    };
+    const { handler, mocks } = setup({ eventData: waitlistEvent });
+    const response = await handler(post({ ...requestBody, waitlistIntent: true }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.eventSelect).toHaveBeenCalledWith(expect.stringContaining('capacity,registration_count,waitlist_enabled'));
+    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
+      payment_status: 'not_required',
+      payment_method: null,
+    }));
   });
 
   it('returns an existing same-scope attempt before checking recency or inserting', async () => {
@@ -436,5 +459,27 @@ describe('submit-registration HTTP handler', () => {
     expect(serializedLogs).not.toContain('person@example.com');
     expect(serializedLogs).not.toContain('browser-response-token');
     expect(serializedLogs).not.toContain('203.0.113.10');
+  });
+
+  it('maps an atomic payment-selection race to a sanitized conflict', async () => {
+    const { handler, log, mocks } = setup({
+      lookupResults: [
+        { data: null, error: null },
+        { data: null, error: null },
+        { data: null, error: null },
+      ],
+      insertError: { message: 'payment_selection_required', details: 'secret database detail' },
+      insertData: null,
+    });
+    const response = await handler(post());
+    const serializedLogs = JSON.stringify(log.mock.calls);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: 'availability_changed',
+      requestId: 'request-123',
+    });
+    expect(mocks.insert).toHaveBeenCalledTimes(1);
+    expect(serializedLogs).not.toContain('secret database detail');
   });
 });

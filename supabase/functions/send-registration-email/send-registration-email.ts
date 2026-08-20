@@ -63,7 +63,7 @@ async function loadCanonicalDelivery(
     { data: organization, error: orgError },
   ] = await Promise.all([
     client.from("events").select(
-      "id, org_id, title, event_type, start_date, location, capacity, registration_count, form_fields, notifications, confirmation_message",
+      "id, org_id, title, event_type, start_date, location, capacity, registration_count, payment_enabled, allow_in_person_payment, tithely_giving_url, tithely_embed_config, form_fields, notifications, confirmation_message",
     ).eq("id", registration.event_id).maybeSingle(),
     client.from("organizations").select("id, name, smtp_config")
       .eq("id", registration.org_id).maybeSingle(),

@@ -99,7 +99,12 @@ function trustedRequestIp(req: Request): string {
 }
 
 function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : '';
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    return typeof message === 'string' ? message : '';
+  }
+  return '';
 }
 
 function publicRegistration(record: PublicRegistration): Record<string, unknown> {
@@ -175,7 +180,7 @@ export function createSubmitRegistrationHandler({
     }
 
     const eventQuery = adminClient.from('events')
-      .select('id,org_id,status,registration_close_date,payment_enabled,allow_in_person_payment,tithely_giving_url,tithely_embed_config,form_fields,waivers')
+      .select('id,org_id,status,registration_close_date,capacity,registration_count,waitlist_enabled,payment_enabled,allow_in_person_payment,tithely_giving_url,tithely_embed_config,form_fields,waivers')
       .eq('id', request.eventId)
       .eq('org_id', request.orgId);
     const { data: event, error: eventError } = await eventQuery.single();
@@ -267,6 +272,10 @@ export function createSubmitRegistrationHandler({
           return errorResponse('invalid_request', 400, correlationId, origin);
         }
         return json(publicRegistration(recoveredAttempt.data), 200, origin);
+      }
+
+      if (messageOf(insertError) === 'payment_selection_required') {
+        return errorResponse('availability_changed', 409, correlationId, origin);
       }
 
       log({ requestId: correlationId, code: 'registration_insert_failed', hostname: verification.hostname });

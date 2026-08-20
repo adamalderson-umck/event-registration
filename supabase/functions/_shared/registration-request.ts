@@ -1,3 +1,5 @@
+import { getValidatedTithelyGivingUrl } from './tithely.ts';
+
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_TOKEN_LENGTH = 2048;
 const MAX_FIELDS = 200;
@@ -15,6 +17,7 @@ const TOP_LEVEL_KEYS = new Set([
   'orgId',
   'formData',
   'paymentMethod',
+  'waitlistIntent',
   'signatureRecords',
   'submissionAttemptId',
   'recentDuplicateOverride',
@@ -57,6 +60,7 @@ export interface RegistrationRequest {
   orgId: string;
   formData: Record<string, unknown>;
   paymentMethod: string | null;
+  waitlistIntent: boolean;
   signatureRecords: SignatureDecision[];
   submissionAttemptId: string | null;
   recentDuplicateOverride: boolean;
@@ -67,6 +71,9 @@ export interface EventRecord extends UnknownRecord {
   org_id: string;
   status: string;
   registration_close_date?: string | null;
+  capacity?: number | null;
+  registration_count?: number;
+  waitlist_enabled?: boolean;
   payment_enabled?: boolean;
   allow_in_person_payment?: boolean;
   tithely_giving_url?: string | null;
@@ -120,6 +127,7 @@ export function parseRegistrationRequest(value: unknown): RegistrationRequest {
 
   const hasSubmissionAttemptId = Object.hasOwn(value, 'submissionAttemptId');
   const hasRecentDuplicateOverride = Object.hasOwn(value, 'recentDuplicateOverride');
+  const hasWaitlistIntent = Object.hasOwn(value, 'waitlistIntent');
   if (hasSubmissionAttemptId !== hasRecentDuplicateOverride) invalidRequest();
 
   const {
@@ -128,6 +136,7 @@ export function parseRegistrationRequest(value: unknown): RegistrationRequest {
     orgId,
     formData,
     paymentMethod,
+    waitlistIntent,
     signatureRecords,
     submissionAttemptId,
     recentDuplicateOverride,
@@ -138,6 +147,7 @@ export function parseRegistrationRequest(value: unknown): RegistrationRequest {
     !isUuid(eventId) || !isUuid(orgId) ||
     !isRecord(formData) || !Array.isArray(signatureRecords) ||
     (paymentMethod !== null && typeof paymentMethod !== 'string') ||
+    (hasWaitlistIntent && typeof waitlistIntent !== 'boolean') ||
     (hasSubmissionAttemptId && !isUuid(submissionAttemptId)) ||
     (hasRecentDuplicateOverride && typeof recentDuplicateOverride !== 'boolean')
   ) {
@@ -150,6 +160,7 @@ export function parseRegistrationRequest(value: unknown): RegistrationRequest {
     orgId,
     formData,
     paymentMethod,
+    waitlistIntent: hasWaitlistIntent ? waitlistIntent as boolean : false,
     signatureRecords: signatureRecords as SignatureDecision[],
     submissionAttemptId: hasSubmissionAttemptId ? submissionAttemptId as string : null,
     recentDuplicateOverride: hasRecentDuplicateOverride ? recentDuplicateOverride as boolean : false,
@@ -401,34 +412,30 @@ function buildSignatureRecords(
   return records;
 }
 
-function hasValidTithelyConfiguration(event: EventRecord): boolean {
-  if (typeof event.tithely_giving_url !== 'string' || !isRecord(event.tithely_embed_config)) return false;
-  try {
-    const url = new URL(event.tithely_giving_url);
-    const formIds = url.searchParams.getAll('formId');
-    const embedFormId = event.tithely_embed_config.formId;
-    return url.protocol === 'https:' && url.origin === 'https://give.tithe.ly' && url.pathname === '/' &&
-      !url.username && !url.password && !url.hash && formIds.length === 1 && isUuid(formIds[0]) &&
-      typeof embedFormId === 'string' && formIds[0].toLowerCase() === embedFormId.toLowerCase();
-  } catch {
-    return false;
-  }
-}
-
-function getPayment(event: EventRecord, requestedMethod: string | null): {
+function getPayment(event: EventRecord, request: RegistrationRequest): {
   payment_status: 'pending' | 'not_required';
   payment_method: string | null;
 } {
+  const plausibleWaitlist = event.waitlist_enabled === true &&
+    typeof event.capacity === 'number' && event.capacity > 0 &&
+    typeof event.registration_count === 'number' &&
+    event.registration_count >= event.capacity;
+
+  if (request.waitlistIntent) {
+    if (!plausibleWaitlist || request.paymentMethod !== null) invalidRequest();
+    return { payment_status: 'not_required', payment_method: null };
+  }
+
   if (!event.payment_enabled) {
-    if (requestedMethod !== null) invalidRequest();
+    if (request.paymentMethod !== null) invalidRequest();
     return { payment_status: 'not_required', payment_method: null };
   }
 
   const allowed = new Set<string>();
-  if (hasValidTithelyConfiguration(event)) allowed.add('tithely');
+  if (getValidatedTithelyGivingUrl(event)) allowed.add('tithely');
   if (event.allow_in_person_payment === true) allowed.add('in_person');
-  if (requestedMethod === null || !allowed.has(requestedMethod)) invalidRequest();
-  return { payment_status: 'pending', payment_method: requestedMethod };
+  if (request.paymentMethod === null || !allowed.has(request.paymentMethod)) invalidRequest();
+  return { payment_status: 'pending', payment_method: request.paymentMethod };
 }
 
 export function buildRegistrationInsert(
@@ -438,7 +445,7 @@ export function buildRegistrationInsert(
 ): RegistrationInsert {
   assertEventAcceptsRegistration(event, request, metadata.now);
   const formData = normalizeCurrentFormData(event, request.formData);
-  const payment = getPayment(event, request.paymentMethod);
+  const payment = getPayment(event, request);
   return {
     event_id: event.id,
     org_id: event.org_id,

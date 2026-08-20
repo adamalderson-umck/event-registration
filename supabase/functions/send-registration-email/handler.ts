@@ -17,6 +17,7 @@ import {
   SanitizedDeliveryError,
 } from "../_shared/email-delivery.ts";
 import type { SmtpConfig } from "../_shared/org-smtp.ts";
+import { getValidatedTithelyGivingUrl } from "../_shared/tithely.ts";
 
 export interface RegistrationEmailRequest {
   type: "INSERT" | "UPDATE";
@@ -47,6 +48,10 @@ interface CanonicalEvent {
   location: string | null;
   capacity: number | null;
   registration_count: number;
+  payment_enabled: boolean;
+  allow_in_person_payment: boolean;
+  tithely_giving_url: string | null;
+  tithely_embed_config: Record<string, unknown> | null;
   form_fields: Array<EmailField & { type: string }>;
   notifications: {
     organizers?: string[];
@@ -233,6 +238,20 @@ function cancellationEmail(
   };
 }
 
+function promotionPaymentHtml(event: CanonicalEvent): string {
+  if (!event.payment_enabled) return "";
+  const givingUrl = getValidatedTithelyGivingUrl(event);
+  const online = givingUrl
+    ? `<p><a href="${escapeHtml(givingUrl)}">Complete payment online with Tithe.ly</a></p>`
+    : "";
+  const inPerson = event.allow_in_person_payment
+    ? "<p>You may also pay in person.</p>"
+    : "";
+  return online || inPerson
+    ? `<div class="divider"></div><h2>Payment</h2>${online}${inPerson}`
+    : "";
+}
+
 function promotionEmail(
   record: CanonicalRegistrationDelivery,
   cancelUrl: string,
@@ -250,8 +269,9 @@ function promotionEmail(
         <div class="divider"></div>
         ${date ? emailField("Date", date) : ""}
         ${
-      record.event.location ? emailField("Location", record.event.location) : ""
-    }
+    record.event.location ? emailField("Location", record.event.location) : ""
+  }
+        ${promotionPaymentHtml(record.event)}
         <div class="divider"></div>
         <p style="font-size:13px;color:#94a3b8;">Need to cancel? Click below:</p>
         <a href="${
