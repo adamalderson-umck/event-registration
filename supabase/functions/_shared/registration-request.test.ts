@@ -211,6 +211,31 @@ describe('buildRegistrationInsert', () => {
     }, metadata)).toThrow('invalid_request');
   });
 
+  it('normalizes plausible parking plates and rejects browser bypasses', () => {
+    const parkingEvent = {
+      ...baseEvent,
+      form_fields: [
+        ...baseEvent.form_fields,
+        { id: 'parking_license_plate', type: 'text', required: true },
+      ],
+    };
+    const requestWithPlate = (plate: string) => ({
+      ...baseRequest,
+      formData: { ...baseRequest.formData, parking_license_plate: plate },
+    });
+
+    expect(buildRegistrationInsert(
+      parkingEvent,
+      requestWithPlate(' ab-c 123 '),
+      metadata,
+    ).form_data.parking_license_plate).toBe('ABC123');
+    expect(() => buildRegistrationInsert(
+      parkingEvent,
+      requestWithPlate('XXXXXX'),
+      metadata,
+    )).toThrow('invalid_request');
+  });
+
   it('rejects duplicate, unknown, missing, or invalid waiver decisions', () => {
     const signed = baseRequest.signatureRecords[0];
     expect(() => buildRegistrationInsert(baseEvent, {

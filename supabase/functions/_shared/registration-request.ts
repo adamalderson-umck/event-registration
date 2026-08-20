@@ -1,3 +1,9 @@
+import {
+  PARKING_LICENSE_PLATE_FIELD_ID,
+  isPlausibleLicensePlate,
+  normalizeLicensePlate,
+} from './license-plate.ts';
+
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_TOKEN_LENGTH = 2048;
 const MAX_FIELDS = 200;
@@ -239,6 +245,10 @@ function validateFieldValue(field: UnknownRecord, value: unknown): unknown {
   }
 
   const stringValue = requireBoundedString(value);
+  if (field.id === PARKING_LICENSE_PLATE_FIELD_ID) {
+    if (!isPlausibleLicensePlate(stringValue)) invalidRequest();
+    return normalizeLicensePlate(stringValue);
+  }
   if (type === 'email' && !EMAIL_PATTERN.test(stringValue.trim())) invalidRequest();
   if (type === 'phone') {
     const digits = stringValue.replace(/\D/g, '');
