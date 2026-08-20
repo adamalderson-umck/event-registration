@@ -36,6 +36,10 @@ function canonicalDelivery(
       location: "Church & Office",
       capacity: 50,
       registration_count: 12,
+      payment_enabled: false,
+      allow_in_person_payment: false,
+      tithely_giving_url: null,
+      tithely_embed_config: null,
       form_fields: [
         { id: "system_email", type: "email", label: "Email" },
         { id: "parking_license_plate", type: "text", label: "License Plate" },
@@ -271,6 +275,60 @@ describe("handleRegistrationEmail", () => {
     expect(JSON.stringify(send.mock.calls)).not.toContain(
       "Creator confirmation text",
     );
+  });
+
+  it("offers configured payment paths only after waitlist promotion", async () => {
+    const record = canonicalDelivery();
+    record.registration.status = "confirmed";
+    record.registration.payment_method = null;
+    record.registration.payment_status = "pending";
+    record.event.payment_enabled = true;
+    record.event.allow_in_person_payment = true;
+    record.event.tithely_giving_url = "https://give.tithe.ly/?formId=11111111-1111-4111-8111-111111111111";
+    record.event.tithely_embed_config = { formId: "11111111-1111-4111-8111-111111111111" };
+    const { dependencies, send } = testDependencies({
+      loadCanonicalDelivery: vi.fn(async () => record),
+    });
+
+    await handleRegistrationEmail(
+      authorizedRequest({
+        type: "UPDATE",
+        registration_id: "registration-1",
+        old_status: "waitlisted",
+        new_status: "confirmed",
+      }),
+      dependencies,
+    );
+
+    const message = send.mock.calls[0][0];
+    expect(message.html).toContain("Complete payment online with Tithe.ly");
+    expect(message.html).toContain("https://give.tithe.ly/?formId=11111111-1111-4111-8111-111111111111");
+    expect(message.html).toContain("You may also pay in person");
+    expect(message.html).not.toContain("Payment verified");
+  });
+
+  it("does not include an unsafe Tithe.ly URL in promotion email", async () => {
+    const record = canonicalDelivery();
+    record.registration.status = "confirmed";
+    record.event.payment_enabled = true;
+    record.event.allow_in_person_payment = false;
+    record.event.tithely_giving_url = "https://evil.example/pay";
+    record.event.tithely_embed_config = { formId: "11111111-1111-4111-8111-111111111111" };
+    const { dependencies, send } = testDependencies({
+      loadCanonicalDelivery: vi.fn(async () => record),
+    });
+
+    await handleRegistrationEmail(
+      authorizedRequest({
+        type: "UPDATE",
+        registration_id: "registration-1",
+        old_status: "waitlisted",
+        new_status: "confirmed",
+      }),
+      dependencies,
+    );
+
+    expect(JSON.stringify(send.mock.calls)).not.toContain("evil.example");
   });
 
   it("keeps organizer notification copy and recipient canonical", async () => {
