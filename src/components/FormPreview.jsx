@@ -67,6 +67,7 @@ function EventDescription({ description }) {
  * @param {boolean} props.readOnly       - Disable all inputs, hide submit
  * @param {Object} [props.errors]        - Validation errors ({ fieldId: message })
  * @param {Function} [props.onFieldChange] - (fieldId, value) => void
+ * @param {Function} [props.onFieldBlur] - (fieldId, value) => void
  * @param {Function} [props.onNext]      - Next-page handler
  * @param {Function} [props.onBack]      - Previous-page handler
  * @param {Function} [props.onSubmit]    - Form submit handler (e) => void
@@ -84,6 +85,7 @@ export default function FormPreview({
     readOnly = false,
     errors = {},
     onFieldChange,
+    onFieldBlur,
     onNext,
     onBack,
     onSubmit,
@@ -123,6 +125,12 @@ export default function FormPreview({
     const handleFieldChange = (fieldId, value) => {
         if (!readOnly && onFieldChange) {
             onFieldChange(fieldId, value);
+        }
+    };
+
+    const handleFieldBlur = (fieldId, value) => {
+        if (!readOnly && onFieldBlur) {
+            onFieldBlur(fieldId, value);
         }
     };
 
@@ -247,6 +255,7 @@ export default function FormPreview({
                                         field={field}
                                         value={formData[field.id]}
                                         onChange={handleFieldChange}
+                                        onBlur={handleFieldBlur}
                                         error={errors[field.id]}
                                         disabled={readOnly}
                                     />

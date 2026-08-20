@@ -143,6 +143,21 @@ describe('DynamicField', () => {
         expect(mockOnChange).toHaveBeenCalledWith('f1', 'John');
     });
 
+    it('reports the field id and current text when a text input blurs', () => {
+        const onBlur = vi.fn();
+        render(
+            <DynamicField
+                field={{ id: 'plate', type: 'text', label: 'Plate' }}
+                value="abc-123"
+                onChange={mockOnChange}
+                onBlur={onBlur}
+            />
+        );
+
+        fireEvent.blur(screen.getByLabelText('Plate'));
+        expect(onBlur).toHaveBeenCalledWith('plate', 'abc-123');
+    });
+
     it('shows error message when provided', () => {
         render(
             <DynamicField
