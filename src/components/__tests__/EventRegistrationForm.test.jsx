@@ -92,6 +92,22 @@ function makeEvent(overrides = {}) {
     };
 }
 
+function makeParkingEvent() {
+    return makeEvent({
+        event_type: 'parking',
+        form_fields: [
+            ...makeEvent().form_fields,
+            {
+                id: 'parking_license_plate',
+                type: 'text',
+                label: 'License Plate',
+                required: true,
+                system: true,
+            },
+        ],
+    });
+}
+
 function setupMocks(eventData = makeEvent(), insertError = null) {
     const { mockInsert, mockInsertSelect, mockInsertSingle, mockSingle, mockFrom, mockInvoke } = supabase._mocks;
 
@@ -222,6 +238,40 @@ describe('EventRegistrationForm', () => {
         expect(await screen.findByText(/valid email/i)).toBeInTheDocument();
         expect(supabase._mocks.mockInvoke).not.toHaveBeenCalled();
         expect(supabase._mocks.mockInsert).not.toHaveBeenCalled();
+    });
+
+    it('normalizes a parking plate on blur and submits the canonical value', async () => {
+        const user = userEvent.setup();
+        setupMocks(makeParkingEvent());
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+        await completeRequiredFields();
+
+        const plate = screen.getByLabelText(/license plate/i);
+        await user.type(plate, ' ab-c 123 ');
+        await user.tab();
+        expect(plate).toHaveValue('ABC123');
+
+        await user.click(screen.getByRole('button', { name: /submit registration/i }));
+        await waitFor(() => expect(supabase._mocks.mockInvoke).toHaveBeenCalledWith(
+            'submit-registration',
+            expect.objectContaining({
+                body: expect.objectContaining({
+                    formData: expect.objectContaining({ parking_license_plate: 'ABC123' }),
+                }),
+            }),
+        ));
+    });
+
+    it('rejects an obvious parking plate placeholder before submission', async () => {
+        const user = userEvent.setup();
+        setupMocks(makeParkingEvent());
+        render(<EventRegistrationForm eventId="evt-1" orgId="org-1" />);
+        await completeRequiredFields();
+        await user.type(screen.getByLabelText(/license plate/i), 'XXXXXX');
+        await user.click(screen.getByRole('button', { name: /submit registration/i }));
+
+        expect(await screen.findByText(/placeholder values are not accepted/i)).toBeInTheDocument();
+        expect(supabase._mocks.mockInvoke).not.toHaveBeenCalled();
     });
 
     it('submits successfully and shows success state', async () => {
