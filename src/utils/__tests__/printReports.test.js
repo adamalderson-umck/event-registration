@@ -74,6 +74,46 @@ describe('printRegistrationTable', () => {
         expect(html).toContain(new Date('2026-08-04T12:00:00Z').toLocaleString());
     });
 
+    it('prints one parking registration as a portrait, sectioned two-column document', () => {
+        printIndividualRegistration({
+            status: 'confirmed',
+            payment_status: 'paid',
+            payment_expected_amount: 100,
+            payment_recorded_total: 100,
+            created_at: '2026-08-11T17:16:39Z',
+            form_data: {
+                system_first_name: 'Alex',
+                system_last_name: 'Morgan',
+                system_email: 'alex@example.org',
+                parking_phone: '(330) 555-0100',
+                parking_local_street: '123 Main Street',
+                parking_vehicle_make: 'Honda',
+            },
+            registration_payments: [],
+        }, {
+            title: 'Student Parking - Fall 2026',
+            event_type: 'parking',
+            form_fields: [
+                { id: 'system_first_name', label: 'Your First Name', type: 'text' },
+                { id: 'system_last_name', label: 'Your Last Name', type: 'text' },
+                { id: 'system_email', label: 'Your Email', type: 'email' },
+                { id: 'parking_phone', label: 'Phone Number', type: 'phone' },
+                { id: 'parking_local_street', label: 'Local Street Address', type: 'text' },
+                { id: 'parking_vehicle_make', label: 'Vehicle Make', type: 'text' },
+            ],
+        });
+
+        const html = write.mock.calls[0][0];
+        expect(html).toContain('@page { size: letter portrait;');
+        expect(html).toContain('class="field-grid"');
+        expect(html).toContain('<h2 class="section-title">Registrant</h2>');
+        expect(html).toContain('<h2 class="section-title">Local Address</h2>');
+        expect(html).toContain('<h2 class="section-title">Vehicle</h2>');
+        expect(html).toContain('class="address-sections"');
+        expect(html).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+        expect(html).toContain('break-inside: avoid');
+    });
+
     it('prints an escaped payment summary and audit history for one registration', () => {
         printIndividualRegistration({
             payment_status: 'partial',

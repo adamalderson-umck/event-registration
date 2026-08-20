@@ -22,6 +22,7 @@ const baseRequest = {
     interests: ['Music'],
   },
   paymentMethod: null,
+  waitlistIntent: false,
   signatureRecords: [{
     waiverId: 'waiver-1',
     declined: false,
@@ -72,7 +73,11 @@ describe('parseRegistrationRequest', () => {
   });
 
   it('normalizes the cached-legacy shape only when both new fields are absent', () => {
-    const { submissionAttemptId, recentDuplicateOverride, ...legacyRequest } = baseRequest;
+    const {
+      submissionAttemptId: _submissionAttemptId,
+      recentDuplicateOverride: _recentDuplicateOverride,
+      ...legacyRequest
+    } = baseRequest;
 
     expect(parseRegistrationRequest(legacyRequest)).toEqual({
       ...legacyRequest,
@@ -81,16 +86,26 @@ describe('parseRegistrationRequest', () => {
     });
   });
 
+  it('parses only boolean waitlist intent and defaults legacy requests to false', () => {
+    expect(parseRegistrationRequest({ ...baseRequest, waitlistIntent: true }))
+      .toMatchObject({ waitlistIntent: true });
+    expect(() => parseRegistrationRequest({ ...baseRequest, waitlistIntent: 'true' }))
+      .toThrow('invalid_request');
+
+    const { waitlistIntent: _omitted, ...legacyRequest } = baseRequest;
+    expect(parseRegistrationRequest(legacyRequest)).toMatchObject({ waitlistIntent: false });
+  });
+
   it('rejects malformed or incomplete attempt contracts', () => {
     expect(() => parseRegistrationRequest({ ...baseRequest, submissionAttemptId: 'not-a-uuid' }))
       .toThrow('invalid_request');
     expect(() => parseRegistrationRequest({ ...baseRequest, recentDuplicateOverride: 'yes' }))
       .toThrow('invalid_request');
 
-    const { recentDuplicateOverride, ...missingOverride } = baseRequest;
+    const { recentDuplicateOverride: _recentDuplicateOverride, ...missingOverride } = baseRequest;
     expect(() => parseRegistrationRequest(missingOverride)).toThrow('invalid_request');
 
-    const { submissionAttemptId, ...overrideWithoutAttempt } = baseRequest;
+    const { submissionAttemptId: _submissionAttemptId, ...overrideWithoutAttempt } = baseRequest;
     expect(() => parseRegistrationRequest(overrideWithoutAttempt)).toThrow('invalid_request');
   });
 
@@ -307,6 +322,35 @@ describe('buildRegistrationInsert', () => {
     expect(() => buildRegistrationInsert(event, {
       ...baseRequest,
       paymentMethod: 'other',
+    }, metadata)).toThrow('invalid_request');
+  });
+
+  it('defers payment only for a plausible full waitlist', () => {
+    const fullEvent = {
+      ...baseEvent,
+      payment_enabled: true,
+      capacity: 10,
+      registration_count: 10,
+      waitlist_enabled: true,
+    };
+
+    expect(buildRegistrationInsert(fullEvent, {
+      ...baseRequest,
+      paymentMethod: null,
+      waitlistIntent: true,
+    }, metadata)).toMatchObject({
+      payment_status: 'not_required',
+      payment_method: null,
+    });
+    expect(() => buildRegistrationInsert({ ...fullEvent, registration_count: 9 }, {
+      ...baseRequest,
+      paymentMethod: null,
+      waitlistIntent: true,
+    }, metadata)).toThrow('invalid_request');
+    expect(() => buildRegistrationInsert({ ...fullEvent, waitlist_enabled: false }, {
+      ...baseRequest,
+      paymentMethod: null,
+      waitlistIntent: true,
     }, metadata)).toThrow('invalid_request');
   });
 });

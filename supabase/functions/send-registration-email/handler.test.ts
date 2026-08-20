@@ -36,6 +36,10 @@ function canonicalDelivery(
       location: "Church & Office",
       capacity: 50,
       registration_count: 12,
+      payment_enabled: false,
+      allow_in_person_payment: false,
+      tithely_giving_url: null,
+      tithely_embed_config: null,
       form_fields: [
         { id: "system_email", type: "email", label: "Email" },
         { id: "parking_license_plate", type: "text", label: "License Plate" },
@@ -77,13 +81,13 @@ function authorizedRequest(
 function testDependencies(
   overrides: Partial<RegistrationEmailDependencies> = {},
 ) {
-  const send = vi.fn(async () => undefined);
+  const send = vi.fn(() => Promise.resolve());
   const dependencies: RegistrationEmailDependencies = {
     serviceRoleKey,
-    loadCanonicalDelivery: vi.fn(async () => canonicalDelivery()),
+    loadCanonicalDelivery: vi.fn(() => Promise.resolve(canonicalDelivery())),
     baseUrl: "https://events.kentmethodist.org",
-    generateCancelToken: vi.fn(async () => "safe"),
-    loadSmtpPassword: vi.fn(async () => "smtp-password"),
+    generateCancelToken: vi.fn(() => Promise.resolve("safe")),
+    loadSmtpPassword: vi.fn(() => Promise.resolve("smtp-password")),
     deliver: vi.fn(async (_claim, performSend) => {
       try {
         await performSend();
@@ -216,7 +220,7 @@ describe("handleRegistrationEmail", () => {
     const record = canonicalDelivery();
     record.registration.status = "waitlisted";
     const { dependencies, send } = testDependencies({
-      loadCanonicalDelivery: vi.fn(async () => record),
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(record)),
     });
 
     await handleRegistrationEmail(
@@ -254,7 +258,7 @@ describe("handleRegistrationEmail", () => {
     record.registration.status = newStatus;
     record.registration.updated_at = "2026-08-07T12:00:00Z";
     const { dependencies, send } = testDependencies({
-      loadCanonicalDelivery: vi.fn(async () => record),
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(record)),
     });
 
     await handleRegistrationEmail(
@@ -271,6 +275,60 @@ describe("handleRegistrationEmail", () => {
     expect(JSON.stringify(send.mock.calls)).not.toContain(
       "Creator confirmation text",
     );
+  });
+
+  it("offers configured payment paths only after waitlist promotion", async () => {
+    const record = canonicalDelivery();
+    record.registration.status = "confirmed";
+    record.registration.payment_method = null;
+    record.registration.payment_status = "pending";
+    record.event.payment_enabled = true;
+    record.event.allow_in_person_payment = true;
+    record.event.tithely_giving_url = "https://give.tithe.ly/?formId=11111111-1111-4111-8111-111111111111";
+    record.event.tithely_embed_config = { formId: "11111111-1111-4111-8111-111111111111" };
+    const { dependencies, send } = testDependencies({
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(record)),
+    });
+
+    await handleRegistrationEmail(
+      authorizedRequest({
+        type: "UPDATE",
+        registration_id: "registration-1",
+        old_status: "waitlisted",
+        new_status: "confirmed",
+      }),
+      dependencies,
+    );
+
+    const message = send.mock.calls[0][0];
+    expect(message.html).toContain("Complete payment online with Tithe.ly");
+    expect(message.html).toContain("https://give.tithe.ly/?formId=11111111-1111-4111-8111-111111111111");
+    expect(message.html).toContain("You may also pay in person");
+    expect(message.html).not.toContain("Payment verified");
+  });
+
+  it("does not include an unsafe Tithe.ly URL in promotion email", async () => {
+    const record = canonicalDelivery();
+    record.registration.status = "confirmed";
+    record.event.payment_enabled = true;
+    record.event.allow_in_person_payment = false;
+    record.event.tithely_giving_url = "https://evil.example/pay";
+    record.event.tithely_embed_config = { formId: "11111111-1111-4111-8111-111111111111" };
+    const { dependencies, send } = testDependencies({
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(record)),
+    });
+
+    await handleRegistrationEmail(
+      authorizedRequest({
+        type: "UPDATE",
+        registration_id: "registration-1",
+        old_status: "waitlisted",
+        new_status: "confirmed",
+      }),
+      dependencies,
+    );
+
+    expect(JSON.stringify(send.mock.calls)).not.toContain("evil.example");
   });
 
   it("keeps organizer notification copy and recipient canonical", async () => {
@@ -294,7 +352,7 @@ describe("handleRegistrationEmail", () => {
     delete record.registration.form_data.system_email;
     record.event.notifications = null;
     const { dependencies, send } = testDependencies({
-      loadCanonicalDelivery: vi.fn(async () => record),
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(record)),
     });
 
     const response = await handleRegistrationEmail(
@@ -330,7 +388,7 @@ describe("handleRegistrationEmail", () => {
     mutate(record);
     let failureCode = "";
     const { dependencies } = testDependencies({
-      loadCanonicalDelivery: vi.fn(async () => record),
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(record)),
       deliver: vi.fn(async (_claim, performSend) => {
         try {
           await performSend();
@@ -359,7 +417,7 @@ describe("handleRegistrationEmail", () => {
 
   it("returns a fixed skip code when canonical records are missing", async () => {
     const { dependencies } = testDependencies({
-      loadCanonicalDelivery: vi.fn(async () => null),
+      loadCanonicalDelivery: vi.fn(() => Promise.resolve(null)),
     });
 
     const response = await handleRegistrationEmail(
@@ -377,7 +435,7 @@ describe("handleRegistrationEmail", () => {
   });
 
   it("suppresses already-sent logical deliveries", async () => {
-    const deliver = vi.fn(async () => "already_sent" as const);
+    const deliver = vi.fn(() => Promise.resolve("already_sent" as const));
     const { dependencies, send } = testDependencies({ deliver });
 
     const response = await handleRegistrationEmail(

@@ -12,6 +12,7 @@ import Card from './ui/Card';
 import { evaluateCondition, splitIntoPages } from '../utils/formConditions';
 import { getAvailablePaymentMethods } from '../utils/tithelyEmbed';
 import {
+    AVAILABILITY_CHANGED_ERROR,
     RECENT_REGISTRATION_ERROR,
     getRegistrationSubmissionErrorCode,
 } from '../services/registrationSubmission';
@@ -40,10 +41,12 @@ export default function EventRegistrationForm({ eventId, orgId }) {
     const [signaturesErrors, setSignaturesErrors] = useState({});
     const [turnstileToken, setTurnstileToken] = useState(null);
     const [recentWarningOpen, setRecentWarningOpen] = useState(false);
+    const [eventRefreshKey, setEventRefreshKey] = useState(0);
     const turnstileRef = useRef(null);
     const turnstileWidgetId = useRef(null);
     const submissionAttemptId = useRef(crypto.randomUUID());
     const pendingRecentOverride = useRef(false);
+    const loadedEventScopeRef = useRef('');
     const performSubmissionRef = useRef(null);
     const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
@@ -54,17 +57,22 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         submissionAttemptId.current = crypto.randomUUID();
         pendingRecentOverride.current = false;
         setRecentWarningOpen(false);
+        setEventRefreshKey(0);
     }, [eventId, orgId]);
 
     // Fetch event data
     useEffect(() => {
         let cancelled = false;
+        const eventScope = `${orgId || ''}:${eventId || ''}`;
+        const isRefresh = loadedEventScopeRef.current === eventScope;
 
-        setEvent(null);
-        setAvailablePaymentMethods([]);
-        setPaymentMethod('');
-        setFetchError('');
-        setLoading(Boolean(eventId && orgId));
+        if (!isRefresh) {
+            setEvent(null);
+            setAvailablePaymentMethods([]);
+            setPaymentMethod('');
+            setFetchError('');
+            setLoading(Boolean(eventId && orgId));
+        }
 
         const fetchEvent = async () => {
             try {
@@ -96,15 +104,19 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 }
 
                 const methods = getAvailablePaymentMethods(data);
+                const joiningWaitlist = Boolean(
+                    data.capacity && data.registration_count >= data.capacity && data.waitlist_enabled
+                );
                 setAvailablePaymentMethods(methods);
-                setPaymentMethod(methods.length === 1 ? methods[0] : '');
+                setPaymentMethod(joiningWaitlist ? '' : methods.length === 1 ? methods[0] : '');
                 setEvent(data);
+                loadedEventScopeRef.current = eventScope;
             } catch (err) {
                 if (cancelled) return;
                 console.error('Error fetching event:', err);
                 setFetchError('Failed to load event');
             } finally {
-                if (!cancelled) setLoading(false);
+                if (!cancelled && !isRefresh) setLoading(false);
             }
         };
 
@@ -112,7 +124,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         return () => {
             cancelled = true;
         };
-    }, [eventId, orgId]);
+    }, [eventId, orgId, eventRefreshKey]);
 
     // Load Cloudflare Turnstile script (only if site key is configured)
     useEffect(() => {
@@ -176,6 +188,8 @@ export default function EventRegistrationForm({ eventId, orgId }) {
 
     // --- Multi-page and condition helpers ---
     const pages = event ? splitIntoPages(event.form_fields || []) : [];
+    const isFull = Boolean(event?.capacity && event.registration_count >= event.capacity);
+    const isJoiningWaitlist = Boolean(isFull && event?.waitlist_enabled);
 
     const getVisibleFields = (fieldsToCheck) =>
         fieldsToCheck.filter((f) => evaluateCondition(f.condition, formData));
@@ -250,7 +264,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
 
         // Waiver validation — only on final submit (fieldsToValidate is null)
         const newSigErrors = {};
-        if (!fieldsToValidate && event?.payment_enabled && !paymentMethod) {
+        if (!fieldsToValidate && event?.payment_enabled && !isJoiningWaitlist && !paymentMethod) {
             newErrors._payment_method = availablePaymentMethods.length === 0
                 ? 'No usable payment method is configured for this event.'
                 : 'Choose a payment method';
@@ -381,7 +395,8 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                         eventId,
                         orgId,
                         formData: normalizedFormData,
-                        paymentMethod: event.payment_enabled ? paymentMethod : null,
+                        paymentMethod: event.payment_enabled && !isJoiningWaitlist ? paymentMethod : null,
+                        waitlistIntent: isJoiningWaitlist,
                         signatureRecords,
                         submissionAttemptId: submissionAttemptId.current,
                         recentDuplicateOverride,
@@ -394,6 +409,17 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 if (errorCode === RECENT_REGISTRATION_ERROR) {
                     setTurnstileToken(null);
                     setRecentWarningOpen(true);
+                    return;
+                }
+                if (errorCode === AVAILABILITY_CHANGED_ERROR) {
+                    setTurnstileToken(null);
+                    if (turnstileWidgetId.current !== null) {
+                        window.turnstile?.reset(turnstileWidgetId.current);
+                    }
+                    setEventRefreshKey((current) => current + 1);
+                    setErrors({
+                        _form: 'Availability changed while you were registering. Please try again and choose a payment method if a spot is now available.',
+                    });
                     return;
                 }
                 throw insertError;
@@ -458,7 +484,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         if (turnstileWidgetId.current !== null) {
             window.turnstile?.reset(turnstileWidgetId.current);
         }
-        setPaymentMethod(availablePaymentMethods.length === 1 ? availablePaymentMethods[0] : '');
+        setPaymentMethod(isJoiningWaitlist ? '' : availablePaymentMethods.length === 1 ? availablePaymentMethods[0] : '');
     };
 
     const handleRecentReturn = () => {
@@ -524,7 +550,6 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         );
     }
 
-    const isFull = event.capacity && event.registration_count >= event.capacity;
     const isClosed = isFull && !event.waitlist_enabled;
 
     // Closed state
@@ -555,7 +580,9 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 onBack={handleBack}
                 onSubmit={handleSubmit}
                 submitting={submitting || (TURNSTILE_SITE_KEY && !turnstileToken && currentPage === pages.length - 1)}
-                submitLabel={paymentMethod === 'tithely'
+                submitLabel={isJoiningWaitlist
+                    ? 'Join Waitlist'
+                    : paymentMethod === 'tithely'
                     ? 'Submit Registration & Continue to Tithe.ly'
                     : 'Submit Registration'}
                 beforeFields={
@@ -586,7 +613,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                         )
                         : null
                 }
-                paymentSlot={
+                paymentSlot={isJoiningWaitlist ? null : (
                     <PaymentMethodChoice
                         methods={availablePaymentMethods}
                         value={paymentMethod}
@@ -601,7 +628,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                         }}
                         error={errors._payment_method}
                     />
-                }
+                )}
                 captchaSlot={
                     TURNSTILE_SITE_KEY && currentPage === pages.length - 1
                         ? (
