@@ -14,7 +14,7 @@ import Checkbox from './ui/Checkbox';
  * - Invalid state communicated via aria-invalid
  * - Group fields use role="group" + aria-labelledby
  */
-export default function DynamicField({ field, value, onChange, error, disabled = false }) {
+export default function DynamicField({ field, value, onChange, onBlur, error, disabled = false }) {
     const { id, type, label, required, placeholder, options = [] } = field;
     const inputId = `field-${id}`;
     const errorId = `field-${id}-error`;
@@ -22,6 +22,10 @@ export default function DynamicField({ field, value, onChange, error, disabled =
 
     const handleChange = (newValue) => {
         onChange(id, newValue);
+    };
+
+    const handleBlur = (currentValue) => {
+        onBlur?.(id, currentValue);
     };
 
     const sharedInputProps = {
@@ -48,6 +52,7 @@ export default function DynamicField({ field, value, onChange, error, disabled =
                         type={type === 'phone' ? 'tel' : type}
                         value={value || ''}
                         onChange={(e) => type === 'phone' ? handlePhoneChange(e.target.value) : handleChange(e.target.value)}
+                        onBlur={(e) => handleBlur(e.target.value)}
                         placeholder={type === 'phone' && !placeholder ? '(555) 555-5555' : placeholder}
                         error={error}
                         disabled={disabled}

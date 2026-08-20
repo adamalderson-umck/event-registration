@@ -1,4 +1,10 @@
 import { evaluateCondition } from './formConditions';
+import {
+  LICENSE_PLATE_ERROR,
+  PARKING_LICENSE_PLATE_FIELD_ID,
+  isPlausibleLicensePlate,
+  normalizeParkingLicensePlateAnswers,
+} from './licensePlate';
 
 export const ANSWER_ERROR_MESSAGES = Object.freeze({
   required: 'This field is required',
@@ -48,11 +54,13 @@ export function getVisibleFields(fields, formData = {}) {
 }
 
 export function prepareVisibleAnswers(fields, formData = {}) {
-  return Object.fromEntries(getVisibleFields(fields, formData).flatMap((field) => (
+  const visibleFields = getVisibleFields(fields, formData);
+  const answers = Object.fromEntries(visibleFields.flatMap((field) => (
     Object.hasOwn(formData, field.id)
       ? [[field.id, formData[field.id]]]
       : []
   )));
+  return normalizeParkingLicensePlateAnswers(visibleFields, answers);
 }
 
 function requiredError(field, value, present) {
@@ -71,6 +79,13 @@ function requiredError(field, value, present) {
 }
 
 function valueError(field, value) {
+  if (
+    field.id === PARKING_LICENSE_PLATE_FIELD_ID
+    && !isPlausibleLicensePlate(value)
+  ) {
+    return LICENSE_PLATE_ERROR;
+  }
+
   if (field.type === 'checkbox') {
     return typeof value === 'boolean' ? '' : ANSWER_ERROR_MESSAGES.required;
   }

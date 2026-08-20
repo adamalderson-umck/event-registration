@@ -10,6 +10,10 @@ import {
     prepareVisibleAnswers,
     validateAnswerDraft,
 } from '../utils/registrationAnswerForm';
+import {
+    PARKING_LICENSE_PLATE_FIELD_ID,
+    normalizeLicensePlate,
+} from '../utils/licensePlate';
 
 const formatValue = (value) => {
     if (value === null || value === undefined || value === '') return '—';
@@ -54,6 +58,11 @@ export default function RegistrationAnswerEditor({
         });
     };
 
+    const handleBlur = (fieldId, value) => {
+        if (fieldId !== PARKING_LICENSE_PLATE_FIELD_ID) return;
+        handleChange(fieldId, normalizeLicensePlate(value));
+    };
+
     const handleSubmit = (event) => {
         event.preventDefault();
         const nextErrors = validateAnswerDraft(formFields, draft);
@@ -78,6 +87,7 @@ export default function RegistrationAnswerEditor({
                             field={field}
                             value={draft[field.id]}
                             onChange={handleChange}
+                            onBlur={handleBlur}
                             error={errors[field.id]}
                             disabled={saving}
                         />

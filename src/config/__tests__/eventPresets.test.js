@@ -32,6 +32,7 @@ describe('event presets', () => {
         const licensePlate = preset.formFields.find(field => field.id === PARKING_FIELD_IDS.LICENSE_PLATE);
 
         expect(new Set(fieldIds).size).toBe(fieldIds.length);
+        expect(PARKING_FIELD_IDS.LICENSE_PLATE).toBe('parking_license_plate');
         expect(fieldIds).toContain(PARKING_FIELD_IDS.LICENSE_PLATE);
         expect(fieldIds).toContain(PARKING_FIELD_IDS.VEHICLE_MAKE);
         expect(licensePlate).toMatchObject({ required: true, system: true });

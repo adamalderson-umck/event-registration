@@ -15,7 +15,7 @@ const fields = [
     options: ['Temporary', 'Permanent'],
   },
   {
-    id: 'plate',
+    id: 'parking_license_plate',
     type: 'text',
     label: 'License Plate',
     required: true,
@@ -75,7 +75,7 @@ describe('RegistrationAnswerEditor', () => {
     expect(props.onSave).toHaveBeenCalledWith({
       email: 'alex@example.org',
       kind: 'Permanent',
-      plate: 'ABC123',
+      parking_license_plate: 'ABC123',
     });
   });
 
@@ -121,5 +121,58 @@ describe('RegistrationAnswerEditor', () => {
     expect(screen.getByRole('radio', { name: 'B' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Checkbox' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'C' })).toBeInTheDocument();
+  });
+
+  it('normalizes the protected plate on blur and saves the normalized value', async () => {
+    const user = userEvent.setup();
+    const props = renderEditor({
+      formFields: [{
+        id: 'parking_license_plate',
+        type: 'text',
+        label: 'License Plate',
+        required: true,
+      }],
+      savedFormData: { parking_license_plate: 'TEMP' },
+    });
+    const plate = screen.getByLabelText(/^License Plate/);
+    await user.clear(plate);
+    await user.type(plate, ' ab-c 123 ');
+    await user.tab();
+    expect(plate).toHaveValue('ABC123');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    expect(props.onSave).toHaveBeenCalledWith({ parking_license_plate: 'ABC123' });
+  });
+
+  it('blocks an obvious protected-plate placeholder', async () => {
+    const user = userEvent.setup();
+    const props = renderEditor({
+      formFields: [{
+        id: 'parking_license_plate',
+        type: 'text',
+        label: 'License Plate',
+        required: true,
+      }],
+      savedFormData: { parking_license_plate: 'TEMP' },
+    });
+    const plate = screen.getByLabelText(/^License Plate/);
+    await user.clear(plate);
+    await user.type(plate, 'XXXXXX');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    expect(screen.getByText(/placeholder values are not accepted/i)).toBeInTheDocument();
+    expect(props.onSave).not.toHaveBeenCalled();
+  });
+
+  it('shows an existing suspicious plate without reporting an error before save', () => {
+    renderEditor({
+      formFields: [{
+        id: 'parking_license_plate',
+        type: 'text',
+        label: 'License Plate',
+        required: true,
+      }],
+      savedFormData: { parking_license_plate: 'XXXXXX' },
+    });
+    expect(screen.getByLabelText(/^License Plate/)).toHaveValue('XXXXXX');
+    expect(screen.queryByText(/placeholder values are not accepted/i)).not.toBeInTheDocument();
   });
 });

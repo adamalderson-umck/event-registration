@@ -16,6 +16,13 @@ import {
     RECENT_REGISTRATION_ERROR,
     getRegistrationSubmissionErrorCode,
 } from '../services/registrationSubmission';
+import {
+    LICENSE_PLATE_ERROR,
+    PARKING_LICENSE_PLATE_FIELD_ID,
+    isPlausibleLicensePlate,
+    normalizeLicensePlate,
+    normalizeParkingLicensePlateAnswers,
+} from '../utils/licensePlate';
 
 export default function EventRegistrationForm({ eventId, orgId }) {
     const [event, setEvent] = useState(null);
@@ -203,6 +210,12 @@ export default function EventRegistrationForm({ eventId, orgId }) {
         }
     };
 
+    const handleFieldBlur = (fieldId, value) => {
+        if (fieldId !== PARKING_LICENSE_PLATE_FIELD_ID) return;
+        const normalized = normalizeLicensePlate(value);
+        setFormData((current) => ({ ...current, [fieldId]: normalized }));
+    };
+
     const validate = (fieldsToValidate = null) => {
         const newErrors = {};
         const fields = fieldsToValidate || allVisibleFields;
@@ -238,6 +251,14 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 if (digits.length > 0 && digits.length < 10) {
                     newErrors[field.id] = 'Please enter a valid 10-digit phone number';
                 }
+            }
+
+            if (
+                field.id === PARKING_LICENSE_PLATE_FIELD_ID
+                && value
+                && !isPlausibleLicensePlate(value)
+            ) {
+                newErrors[field.id] = LICENSE_PLATE_ERROR;
             }
         }
 
@@ -335,6 +356,10 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                     cleanFormData[field.id] = formData[field.id];
                 }
             }
+            const normalizedFormData = normalizeParkingLicensePlateAnswers(
+                allVisibleFields,
+                cleanFormData,
+            );
 
             // Send only waiver decisions and signature input. The trusted server
             // derives waiver metadata, timestamps, IP address, and user agent.
@@ -369,7 +394,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                         turnstileToken: token,
                         eventId,
                         orgId,
-                        formData: cleanFormData,
+                        formData: normalizedFormData,
                         paymentMethod: event.payment_enabled && !isJoiningWaitlist ? paymentMethod : null,
                         waitlistIntent: isJoiningWaitlist,
                         signatureRecords,
@@ -550,6 +575,7 @@ export default function EventRegistrationForm({ eventId, orgId }) {
                 readOnly={false}
                 errors={errors}
                 onFieldChange={handleFieldChange}
+                onFieldBlur={handleFieldBlur}
                 onNext={handleNext}
                 onBack={handleBack}
                 onSubmit={handleSubmit}

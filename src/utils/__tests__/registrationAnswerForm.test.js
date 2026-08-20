@@ -19,7 +19,7 @@ const fields = [
     options: ['Yes', 'No'],
   },
   {
-    id: 'plate',
+    id: 'parking_license_plate',
     type: 'text',
     label: 'License Plate',
     required: true,
@@ -32,20 +32,20 @@ describe('registration answer form utilities', () => {
     const saved = {
       email: 'a@example.org',
       has_plate: 'Yes',
-      plate: 'TEMP',
+      parking_license_plate: 'TEMP',
       retired: 'keep',
     };
 
     expect(buildAnswerDraft(fields, saved)).toEqual({
       email: 'a@example.org',
       has_plate: 'Yes',
-      plate: 'TEMP',
+      parking_license_plate: 'TEMP',
     });
     expect(getLegacyAnswers(fields, saved)).toEqual({ retired: 'keep' });
   });
 
   it('validates visible formats and drops hidden answers', () => {
-    const draft = { email: 'bad', has_plate: 'No', plate: 'TEMP' };
+    const draft = { email: 'bad', has_plate: 'No', parking_license_plate: 'TEMP' };
 
     expect(getVisibleFields(fields, draft).map((field) => field.id)).toEqual([
       'email',
@@ -119,5 +119,30 @@ describe('registration answer form utilities', () => {
       checkbox: false,
       group: ['C'],
     })).toEqual({});
+  });
+
+  it('rejects suspicious protected plates and prepares normalized answers', () => {
+    const plateField = {
+      id: 'parking_license_plate',
+      type: 'text',
+      label: 'License Plate',
+      required: true,
+    };
+
+    expect(validateAnswerDraft([plateField], {
+      parking_license_plate: 'XXXXXX',
+    })).toEqual({
+      parking_license_plate:
+        'Enter a valid U.S. license plate using 3–8 letters and numbers, or TEMP for a temporary plate. Placeholder values are not accepted.',
+    });
+    expect(prepareVisibleAnswers([plateField], {
+      parking_license_plate: ' ab-c 123 ',
+    })).toEqual({ parking_license_plate: 'ABC123' });
+  });
+
+  it('does not apply plate rules to an ordinary text field', () => {
+    expect(validateAnswerDraft([
+      { id: 'nickname', type: 'text', required: true },
+    ], { nickname: 'XXXXXX' })).toEqual({});
   });
 });

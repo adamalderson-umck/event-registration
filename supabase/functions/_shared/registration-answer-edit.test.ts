@@ -143,4 +143,40 @@ describe('registration answer edits', () => {
       permit: 'No',
     }).changes).toEqual([]);
   });
+
+  it('normalizes and audits a protected parking plate edit', () => {
+    const parkingEvent = {
+      ...event,
+      form_fields: [
+        ...event.form_fields,
+        { id: 'parking_license_plate', type: 'text', label: 'License Plate', required: true },
+      ],
+    };
+    const prepared = prepareRegistrationAnswerEdit(parkingEvent, {
+      form_data: {
+        name: 'Alex', email: 'alex@example.org', permit: 'No',
+        parking_license_plate: 'TEMP', retired: 'keep me',
+      },
+    }, {
+      name: 'Alex', email: 'alex@example.org', permit: 'No',
+      parking_license_plate: ' ab-c 123 ',
+    });
+
+    expect(prepared.formData).toMatchObject({
+      parking_license_plate: 'ABC123',
+      retired: 'keep me',
+    });
+    expect(prepared.changes).toContainEqual({
+      fieldId: 'parking_license_plate',
+      fieldLabel: 'License Plate',
+      before: 'TEMP',
+      after: 'ABC123',
+    });
+    expect(() => prepareRegistrationAnswerEdit(parkingEvent, {
+      form_data: prepared.formData,
+    }, {
+      name: 'Alex', email: 'alex@example.org', permit: 'No',
+      parking_license_plate: 'XXXXXX',
+    })).toThrow('invalid_request');
+  });
 });
