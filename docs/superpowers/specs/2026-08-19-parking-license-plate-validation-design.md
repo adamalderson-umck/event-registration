@@ -1,7 +1,7 @@
 # Parking License Plate Validation Design
 
 **Date:** 2026-08-19
-**Status:** Awaiting written-spec review
+**Status:** Approved 2026-08-20
 
 ## Goal
 
