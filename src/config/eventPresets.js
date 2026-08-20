@@ -1,5 +1,6 @@
 import { US_STATES } from './fieldTemplates';
 import { PARKING_CONFIRMATION_MESSAGE_STARTER } from './eventEmailMessages';
+import { PARKING_LICENSE_PLATE_FIELD_ID } from '../utils/licensePlate';
 
 export const EVENT_TYPES = Object.freeze({
     STANDARD: 'standard',
@@ -31,7 +32,7 @@ export const PARKING_FIELD_IDS = Object.freeze({
     VEHICLE_MAKE: 'parking_vehicle_make',
     VEHICLE_MODEL: 'parking_vehicle_model',
     VEHICLE_COLOR: 'parking_vehicle_color',
-    LICENSE_PLATE: 'parking_license_plate',
+    LICENSE_PLATE: PARKING_LICENSE_PLATE_FIELD_ID,
     REGISTRATION_STATE: 'parking_registration_state',
     REGISTRATION_COUNTY: 'parking_registration_county',
     INSURANCE_PROVIDER: 'parking_insurance_provider',
