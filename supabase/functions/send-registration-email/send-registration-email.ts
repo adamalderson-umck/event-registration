@@ -7,6 +7,7 @@ import {
 import { loadSmtpPassword, sendHtmlEmail } from "../_shared/org-smtp.ts";
 import {
   type CanonicalRegistrationDelivery,
+  type CanonicalRegistrationLoadResult,
   handleRegistrationEmail,
 } from "./handler.ts";
 
@@ -49,15 +50,16 @@ async function generateCancelToken(
 
 async function loadCanonicalDelivery(
   registrationId: string,
-): Promise<CanonicalRegistrationDelivery | null> {
+): Promise<CanonicalRegistrationLoadResult> {
   const { data: registration, error: registrationError } = await client
     .from("registrations")
     .select(
-      "id, org_id, event_id, status, form_data, payment_method, payment_status, legacy_payment_paid, created_at, updated_at",
+      "id, org_id, event_id, status, form_data, payment_method, payment_status, legacy_payment_paid, created_at, cancelled_at, promoted_at",
     )
     .eq("id", registrationId)
     .maybeSingle();
-  if (registrationError || !registration) return null;
+  if (registrationError) return { status: "error" };
+  if (!registration) return { status: "missing" };
 
   const [
     { data: event, error: eventError },
@@ -69,9 +71,13 @@ async function loadCanonicalDelivery(
     client.from("organizations").select("id, name, smtp_config")
       .eq("id", registration.org_id).maybeSingle(),
   ]);
-  if (eventError || orgError || !event || !organization) return null;
+  if (eventError || orgError) return { status: "error" };
+  if (!event || !organization) return { status: "missing" };
 
-  return { registration, event, organization } as CanonicalRegistrationDelivery;
+  return {
+    status: "found",
+    record: { registration, event, organization } as CanonicalRegistrationDelivery,
+  };
 }
 
 Deno.serve((request: Request) =>
