@@ -79,7 +79,7 @@ export interface RegistrationOutgoingEmail extends OutgoingEmail {
 }
 
 export interface RegistrationEmailDependencies {
-  serviceRoleKey: string;
+  automationSecret: string;
   baseUrl: string;
   loadCanonicalDelivery(
     registrationId: string,
@@ -423,7 +423,7 @@ export async function handleRegistrationEmail(
   if (request.method !== "POST") {
     return jsonResponse({ error: "method_not_allowed" }, 405);
   }
-  if (!isTrustedAutomationRequest(request, dependencies.serviceRoleKey)) {
+  if (!isTrustedAutomationRequest(request, dependencies.automationSecret)) {
     return jsonResponse({ error: "unauthorized" }, 401);
   }
 

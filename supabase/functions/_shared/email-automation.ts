@@ -1,9 +1,11 @@
+export const AUTOMATION_SECRET_HEADER = "x-email-automation-secret";
+
 export function isTrustedAutomationRequest(
   request: Request,
-  serviceRoleKey: string,
+  automationSecret: string,
 ): boolean {
-  return serviceRoleKey.length > 0 &&
-    request.headers.get("authorization") === `Bearer ${serviceRoleKey}`;
+  return automationSecret.length > 0 &&
+    request.headers.get(AUTOMATION_SECRET_HEADER) === automationSecret;
 }
 
 export function registrationDeliveryKey(

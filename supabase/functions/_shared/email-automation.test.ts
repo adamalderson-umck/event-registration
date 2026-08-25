@@ -6,19 +6,20 @@ import {
 } from "./email-automation.ts";
 
 describe("trusted email automation", () => {
-  it("accepts only the exact service-role bearer value", () => {
+  it("accepts only the exact dedicated automation secret", () => {
     const trusted = new Request("https://example.test", {
-      headers: { authorization: "Bearer service-role-secret" },
+      headers: { "x-email-automation-secret": "automation-secret" },
     });
-    const ordinaryUser = new Request("https://example.test", {
-      headers: { authorization: "Bearer ordinary-user-token" },
+    const bearerOnly = new Request("https://example.test", {
+      headers: { authorization: "Bearer automation-secret" },
+    });
+    const mismatched = new Request("https://example.test", {
+      headers: { "x-email-automation-secret": "wrong-secret" },
     });
 
-    expect(isTrustedAutomationRequest(trusted, "service-role-secret")).toBe(
-      true,
-    );
-    expect(isTrustedAutomationRequest(ordinaryUser, "service-role-secret"))
-      .toBe(false);
+    expect(isTrustedAutomationRequest(trusted, "automation-secret")).toBe(true);
+    expect(isTrustedAutomationRequest(bearerOnly, "automation-secret")).toBe(false);
+    expect(isTrustedAutomationRequest(mismatched, "automation-secret")).toBe(false);
     expect(isTrustedAutomationRequest(trusted, "")).toBe(false);
   });
 

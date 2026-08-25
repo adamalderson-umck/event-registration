@@ -6,7 +6,7 @@ import {
   type RegistrationEmailRequest,
 } from "./handler.ts";
 
-const serviceRoleKey = "service-role-secret";
+const automationSecret = "automation-secret";
 
 function canonicalDelivery(
   overrides: Partial<CanonicalRegistrationDelivery> = {},
@@ -71,7 +71,7 @@ function authorizedRequest(
   return new Request("https://example.test", {
     method: "POST",
     headers: {
-      authorization: `Bearer ${serviceRoleKey}`,
+      "x-email-automation-secret": automationSecret,
       "content-type": "application/json",
     },
     body: JSON.stringify(body),
@@ -83,7 +83,7 @@ function testDependencies(
 ) {
   const send = vi.fn(() => Promise.resolve());
   const dependencies: RegistrationEmailDependencies = {
-    serviceRoleKey,
+    automationSecret,
     loadCanonicalDelivery: vi.fn(() => Promise.resolve(canonicalDelivery())),
     baseUrl: "https://events.kentmethodist.org",
     generateCancelToken: vi.fn(() => Promise.resolve("safe")),
@@ -116,12 +116,12 @@ describe("handleRegistrationEmail", () => {
     expect(loadCanonicalDelivery).not.toHaveBeenCalled();
   });
 
-  it("rejects an ordinary token before reading a malformed body", async () => {
+  it("rejects a bearer token before reading a malformed body", async () => {
     const { dependencies } = testDependencies();
     const response = await handleRegistrationEmail(
       new Request("https://example.test", {
         method: "POST",
-        headers: { authorization: "Bearer ordinary-user-token" },
+        headers: { authorization: "Bearer automation-secret" },
         body: "{not-json",
       }),
       dependencies,
