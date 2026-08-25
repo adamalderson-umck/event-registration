@@ -51,7 +51,10 @@ const DEPLOYED_FUNCTIONS = Object.freeze({
     },
 });
 
-const PENDING_DEPLOYMENT_FUNCTIONS = Object.freeze({});
+const PENDING_DEPLOYMENT_FUNCTIONS = Object.freeze({
+    'send-event-reminders': { verifyJwt: false },
+    'send-registration-email': { verifyJwt: false },
+});
 
 const SOURCE_FUNCTIONS = Object.freeze({
     ...DEPLOYED_FUNCTIONS,

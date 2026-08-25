@@ -36,7 +36,8 @@ interface CanonicalRegistration {
   payment_status: string | null;
   legacy_payment_paid: boolean;
   created_at: string;
-  updated_at: string;
+  cancelled_at: string | null;
+  promoted_at: string | null;
 }
 
 interface CanonicalEvent {
@@ -72,6 +73,11 @@ export interface CanonicalRegistrationDelivery {
   organization: CanonicalOrganization;
 }
 
+export type CanonicalRegistrationLoadResult =
+  | { status: "found"; record: CanonicalRegistrationDelivery }
+  | { status: "missing" }
+  | { status: "error" };
+
 export interface RegistrationOutgoingEmail extends OutgoingEmail {
   config: SmtpConfig;
   password: string;
@@ -79,11 +85,11 @@ export interface RegistrationOutgoingEmail extends OutgoingEmail {
 }
 
 export interface RegistrationEmailDependencies {
-  serviceRoleKey: string;
+  automationSecret: string;
   baseUrl: string;
   loadCanonicalDelivery(
     registrationId: string,
-  ): Promise<CanonicalRegistrationDelivery | null>;
+  ): Promise<CanonicalRegistrationLoadResult>;
   generateCancelToken(record: CanonicalRegistrationDelivery): Promise<string>;
   loadSmtpPassword(orgId: string): Promise<string>;
   deliver(
@@ -386,10 +392,13 @@ function buildLogicalDeliveries(
     request.old_status !== "cancelled" && request.new_status === "cancelled"
   ) {
     if (email) {
+      if (!record.registration.cancelled_at) {
+        return { deliveries, code: "canonical_record_mismatch" };
+      }
       deliveries.push({
         kind: "registration_cancellation",
         recipient: email,
-        occurrence: record.registration.updated_at,
+        occurrence: record.registration.cancelled_at,
         compose: () => Promise.resolve(cancellationEmail(record)),
       });
     }
@@ -399,10 +408,13 @@ function buildLogicalDeliveries(
     request.old_status === "waitlisted" && request.new_status === "confirmed"
   ) {
     if (email) {
+      if (!record.registration.promoted_at) {
+        return { deliveries, code: "canonical_record_mismatch" };
+      }
       deliveries.push({
         kind: "waitlist_promotion",
         recipient: email,
-        occurrence: record.registration.updated_at,
+        occurrence: record.registration.promoted_at,
         compose: async () =>
           promotionEmail(
             record,
@@ -423,7 +435,7 @@ export async function handleRegistrationEmail(
   if (request.method !== "POST") {
     return jsonResponse({ error: "method_not_allowed" }, 405);
   }
-  if (!isTrustedAutomationRequest(request, dependencies.serviceRoleKey)) {
+  if (!isTrustedAutomationRequest(request, dependencies.automationSecret)) {
     return jsonResponse({ error: "unauthorized" }, 401);
   }
 
@@ -435,12 +447,16 @@ export async function handleRegistrationEmail(
   }
   if (!parsed) return jsonResponse({ error: "invalid_request" }, 400);
 
-  const record = await dependencies.loadCanonicalDelivery(
+  const loaded = await dependencies.loadCanonicalDelivery(
     parsed.registration_id,
   );
-  if (!record) {
+  if (loaded.status === "error") {
+    return jsonResponse({ error: "canonical_load_failed" }, 500);
+  }
+  if (loaded.status === "missing") {
     return jsonResponse({ skipped: true, code: "canonical_record_missing" });
   }
+  const record = loaded.record;
   if (
     record.registration.id !== parsed.registration_id ||
     record.registration.event_id !== record.event.id ||

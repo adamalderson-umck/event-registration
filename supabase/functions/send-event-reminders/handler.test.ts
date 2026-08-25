@@ -6,7 +6,7 @@ import {
   type ReminderDependencies,
 } from "./handler.ts";
 
-const serviceRoleKey = "service-role-secret";
+const automationSecret = "automation-secret";
 const now = new Date("2026-08-06T12:00:00Z");
 
 function reminderEvent(
@@ -58,7 +58,7 @@ function recipient(
 function authorizedRequest(): Request {
   return new Request("https://example.test", {
     method: "POST",
-    headers: { authorization: `Bearer ${serviceRoleKey}` },
+    headers: { "x-email-automation-secret": automationSecret },
   });
 }
 
@@ -66,7 +66,7 @@ function testDependencies(
   overrides: Partial<ReminderDependencies> = {},
 ): ReminderDependencies {
   return {
-    serviceRoleKey,
+    automationSecret,
     now: () => now,
     loadDueEvents: vi.fn(async () => [reminderEvent()]),
     loadConfirmedRecipients: vi.fn(async () => [
@@ -105,12 +105,12 @@ describe("handleEventReminders", () => {
     expect(loadDueEvents).not.toHaveBeenCalled();
   });
 
-  it("rejects an untrusted bearer before repository work", async () => {
+  it("rejects a bearer token before repository work", async () => {
     const loadDueEvents = vi.fn();
     const response = await handleEventReminders(
       new Request("https://example.test", {
         method: "POST",
-        headers: { authorization: "Bearer ordinary-user-token" },
+        headers: { authorization: "Bearer automation-secret" },
       }),
       testDependencies({ loadDueEvents }),
     );

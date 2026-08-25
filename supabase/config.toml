@@ -389,13 +389,13 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.send-event-reminders]
-verify_jwt = true
+verify_jwt = false
 
 [functions.send-organizer-invite]
 verify_jwt = true
 
 [functions.send-registration-email]
-verify_jwt = true
+verify_jwt = false
 entrypoint = "./functions/send-registration-email/send-registration-email.ts"
 
 [functions.submit-registration]

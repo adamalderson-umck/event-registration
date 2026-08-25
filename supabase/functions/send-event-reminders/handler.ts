@@ -51,7 +51,7 @@ export interface ReminderOutgoingEmail extends OutgoingEmail {
 }
 
 export interface ReminderDependencies {
-  serviceRoleKey: string;
+  automationSecret: string;
   now(): Date;
   loadDueEvents(now: Date): Promise<CanonicalReminderEvent[]>;
   loadConfirmedRecipients(
@@ -138,7 +138,7 @@ export async function handleEventReminders(
   if (request.method !== "POST") {
     return jsonResponse({ error: "method_not_allowed" }, 405);
   }
-  if (!isTrustedAutomationRequest(request, dependencies.serviceRoleKey)) {
+  if (!isTrustedAutomationRequest(request, dependencies.automationSecret)) {
     return jsonResponse({ error: "unauthorized" }, 401);
   }
 

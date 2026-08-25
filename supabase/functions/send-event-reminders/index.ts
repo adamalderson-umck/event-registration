@@ -12,6 +12,7 @@ import {
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const automationSecret = Deno.env.get("EMAIL_AUTOMATION_SECRET") || "";
 const client = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
@@ -65,7 +66,7 @@ async function markReminderComplete(
 
 Deno.serve((request: Request) =>
   handleEventReminders(request, {
-    serviceRoleKey,
+    automationSecret,
     now: () => new Date(),
     loadDueEvents,
     loadConfirmedRecipients,
