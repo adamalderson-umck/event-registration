@@ -40,10 +40,19 @@ export const EXPECTED_APPLIED_MIGRATIONS = [
   '20260806001318_harden_remaining_admin_functions.sql',
   '20260806001553_require_verified_google_identity_email.sql',
   '20260806054726_tithely_payment_flow.sql',
+  '20260806060759_registration_payment_ledger.sql',
+  '20260806070000_enforce_siteverify_registration_insert.sql',
+  '20260806075423_disambiguate_registration_payment_relationship.sql',
+  '20260806134707_event_email_message_control.sql',
+  '20260807120000_admin_registration_answer_edits.sql',
+  '20260808010723_add_registration_submission_attempt.sql',
+  '20260819090000_parking_pass_finalization.sql',
+  '20260820150000_defer_waitlist_payments.sql',
+  '20260825160000_repair_email_automation_contract.sql',
 ];
 
 export const BASELINE_MIGRATION = '20260806001553_require_verified_google_identity_email.sql';
-export const LATEST_APPLIED_VERSION = '20260806054726';
+export const LATEST_APPLIED_VERSION = '20260825160000';
 
 const MIGRATION_FILENAME = /^(\d{14})_([a-z0-9_]+)\.sql$/;
 const PROJECT_URL = /https:\/\/[a-z0-9]{20}\.supabase\.co\b/;
