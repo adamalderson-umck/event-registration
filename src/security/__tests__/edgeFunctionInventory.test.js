@@ -15,9 +15,9 @@ const DEPLOYED_FUNCTIONS = Object.freeze({
         hash: '7bfa7ce181214a5315cb98d9b5638d6c2e4ab2f2c088a757a4d651b2c5db5b25',
     },
     'send-event-reminders': {
-        version: 2,
-        verifyJwt: true,
-        hash: 'f30b5437e47f375a2933e59de9c0fc922e4d2a22126781af37547ef49727ac0e',
+        version: 6,
+        verifyJwt: false,
+        hash: '40f48cb7a3b231c3d1dba16d49c5a176460dad8cebbc36012ec7a56c78883434',
     },
     'send-organizer-invite': {
         version: 4,
@@ -25,9 +25,9 @@ const DEPLOYED_FUNCTIONS = Object.freeze({
         hash: 'dd8d3785d1d64f87402cf32546d2e27625562678a1e49d6a2321cfa2d62ed576',
     },
     'send-registration-email': {
-        version: 7,
-        verifyJwt: true,
-        hash: 'ade3a9d9e03ac124dd386cf1d44b599d6f7ad15fe48668ca030a2657d954b397',
+        version: 12,
+        verifyJwt: false,
+        hash: '5d35bfd5187437df8a7efdee1afadff3b4f40ae38adbdb9533e59df91c3f8309',
     },
     'submit-registration': {
         version: 1,
@@ -51,15 +51,7 @@ const DEPLOYED_FUNCTIONS = Object.freeze({
     },
 });
 
-const PENDING_DEPLOYMENT_FUNCTIONS = Object.freeze({
-    'send-event-reminders': { verifyJwt: false },
-    'send-registration-email': { verifyJwt: false },
-});
-
-const SOURCE_FUNCTIONS = Object.freeze({
-    ...DEPLOYED_FUNCTIONS,
-    ...PENDING_DEPLOYMENT_FUNCTIONS,
-});
+const SOURCE_FUNCTIONS = DEPLOYED_FUNCTIONS;
 
 const root = process.cwd();
 const functionsDirectory = path.resolve(root, 'supabase/functions');
