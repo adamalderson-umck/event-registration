@@ -78,6 +78,7 @@ The repair is test-driven. Before production code changes, regression tests must
 
 - Export or otherwise expose the canonical registration projection as one reviewable contract.
 - Compare every selected registration column with the repository's migration-defined `registrations` schema.
+- Invoke the real Edge Function entrypoint with an injected Supabase client and assert the loader executes the expected `from`, `select`, `eq`, and `maybeSingle` chain.
 - Assert cancellation and promotion occurrence keys use `cancelled_at` and `promoted_at` respectively.
 - Assert query failures produce `canonical_load_failed` and cannot pass as `canonical_record_missing`.
 

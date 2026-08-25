@@ -23,6 +23,7 @@
 - Create `supabase/migrations/20260825160000_repair_email_automation_contract.sql`: replace registration triggers and reminder cron with the dedicated Vault/header contract.
 - Create `src/security/__tests__/emailAutomationContractRepair.test.js`: cross-check migration callers, Edge Function entrypoints, and JWT configuration.
 - Create `src/security/__tests__/registrationEmailSchemaContract.test.js`: compare every registration projection column with the migration-defined schema.
+- Create `supabase/functions/send-registration-email/send-registration-email.test.ts`: invoke the real entrypoint with an injected Supabase client and prove the loader executes the intended query chain.
 - Modify `src/security/__tests__/edgeFunctionInventory.test.js`: record both functions as pending deployment with `verify_jwt = false` without altering live-version assertions.
 - Modify `supabase/config.toml`: allow the purpose-specific header to reach both handlers.
 - Modify `tools/check-supabase-migrations.mjs`: register the forward migration only after it is actually deployed; do not change this file during local implementation.
@@ -367,6 +368,7 @@ git commit -m "fix: align email automation callers"
 
 **Files:**
 - Create: `src/security/__tests__/registrationEmailSchemaContract.test.js`
+- Create: `supabase/functions/send-registration-email/send-registration-email.test.ts`
 - Modify: `supabase/functions/send-registration-email/handler.ts`
 - Modify: `supabase/functions/send-registration-email/handler.test.ts`
 - Modify: `supabase/functions/send-registration-email/send-registration-email.ts`
@@ -413,6 +415,22 @@ describe('registration email schema contract', () => {
 ```
 
 - [ ] **Step 2: Add handler tests for real transition timestamps and load errors**
+
+Also add an entrypoint-level test that mocks only `createClient` and the unused SMTP adapter, captures the real `Deno.serve` handler, submits an authenticated nonexistent registration ID, and asserts that the actual loader calls:
+
+```ts
+expect(query.from).toHaveBeenCalledWith("registrations");
+expect(query.select).toHaveBeenCalledWith(
+  "id, org_id, event_id, status, form_data, payment_method, payment_status, legacy_payment_paid, created_at, cancelled_at, promoted_at",
+);
+expect(query.eq).toHaveBeenCalledWith(
+  "id",
+  "00000000-0000-0000-0000-000000000001",
+);
+expect(query.maybeSingle).toHaveBeenCalledOnce();
+```
+
+The same entrypoint test must make the registration query return PostgreSQL code `42703` and require HTTP 500 `canonical_load_failed`. Demonstrate that this test fails when the production projection is temporarily restored to `updated_at`, then restore the repair and rerun it green.
 
 Replace fictional `updated_at` in the canonical fixture with:
 
