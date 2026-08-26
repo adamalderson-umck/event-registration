@@ -3,7 +3,6 @@ import {
   type CanonicalRegistrationDelivery,
   handleRegistrationEmail,
   type RegistrationEmailDependencies,
-  type RegistrationEmailRequest,
 } from "./handler.ts";
 
 const automationSecret = "automation-secret";
@@ -70,8 +69,20 @@ function found(record = canonicalDelivery()) {
   return { status: "found" as const, record };
 }
 
+const retryDelivery = (overrides = {}) => ({
+  id: "delivery-1",
+  delivery_key:
+    "registration_confirmation:registration-1:2026-08-06T12:00:00Z",
+  registration_id: "registration-1",
+  kind: "registration_confirmation" as const,
+  state: "failed" as const,
+  attempt_count: 4,
+  attempted_at: "2026-08-06T14:00:00Z",
+  ...overrides,
+});
+
 function authorizedRequest(
-  body: RegistrationEmailRequest & Record<string, unknown>,
+  body: Record<string, unknown>,
 ): Request {
   return new Request("https://example.test", {
     method: "POST",
@@ -90,6 +101,9 @@ function testDependencies(
   const dependencies: RegistrationEmailDependencies = {
     automationSecret,
     loadCanonicalDelivery: vi.fn(() => Promise.resolve(found())),
+    loadDelivery: vi.fn(() =>
+      Promise.resolve({ status: "missing" as const })
+    ),
     baseUrl: "https://events.kentmethodist.org",
     generateCancelToken: vi.fn(() => Promise.resolve("safe")),
     loadSmtpPassword: vi.fn(() => Promise.resolve("smtp-password")),
@@ -108,6 +122,186 @@ function testDependencies(
 }
 
 describe("handleRegistrationEmail", () => {
+  it("retries one exact failed lifecycle delivery", async () => {
+    const record = canonicalDelivery();
+    record.registration.promoted_at = null;
+    const { dependencies, send } = testDependencies({
+      loadCanonicalDelivery: vi.fn(async () => found(record)),
+      loadDelivery: vi.fn(async () => ({
+        status: "found" as const,
+        delivery: retryDelivery(),
+      })),
+    });
+
+    const response = await handleRegistrationEmail(
+      authorizedRequest({ type: "RETRY", delivery_id: "delivery-1" }),
+      dependencies,
+    );
+
+    expect(send).toHaveBeenCalledOnce();
+    expect(dependencies.deliver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey:
+          "registration_confirmation:registration-1:2026-08-06T12:00:00Z",
+        kind: "registration_confirmation",
+      }),
+      expect.any(Function),
+    );
+    expect(await response.json()).toMatchObject({ sent: 1, failed: 0 });
+  });
+
+  it.each([
+    ["organizer_notification", "not_retryable"],
+    ["event_reminder", "not_retryable"],
+  ])("does not retry %s", async (kind, code) => {
+    const { dependencies, send } = testDependencies({
+      loadDelivery: vi.fn(async () => ({
+        status: "found" as const,
+        delivery: retryDelivery({ kind }),
+      })),
+    });
+
+    const response = await handleRegistrationEmail(
+      authorizedRequest({ type: "RETRY", delivery_id: "delivery-1" }),
+      dependencies,
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(await response.json()).toEqual({ skipped: true, code });
+  });
+
+  it("does not retry an obsolete lifecycle key", async () => {
+    const record = canonicalDelivery();
+    record.registration.status = "confirmed";
+    record.registration.promoted_at = "2026-08-07T13:00:00Z";
+    const { dependencies, send } = testDependencies({
+      loadCanonicalDelivery: vi.fn(async () => found(record)),
+      loadDelivery: vi.fn(async () => ({
+        status: "found" as const,
+        delivery: retryDelivery(),
+      })),
+    });
+
+    const response = await handleRegistrationEmail(
+      authorizedRequest({ type: "RETRY", delivery_id: "delivery-1" }),
+      dependencies,
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(await response.json()).toEqual({
+      skipped: true,
+      code: "not_applicable",
+    });
+  });
+
+  it("returns a fixed code when the retry delivery is missing", async () => {
+    const { dependencies } = testDependencies();
+    const response = await handleRegistrationEmail(
+      authorizedRequest({ type: "RETRY", delivery_id: "delivery-1" }),
+      dependencies,
+    );
+
+    expect(await response.json()).toEqual({
+      skipped: true,
+      code: "delivery_missing",
+    });
+  });
+
+  it("returns an observable server error when retry delivery loading fails", async () => {
+    const { dependencies } = testDependencies({
+      loadDelivery: vi.fn(async () => ({ status: "error" as const })),
+    });
+    const response = await handleRegistrationEmail(
+      authorizedRequest({ type: "RETRY", delivery_id: "delivery-1" }),
+      dependencies,
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "delivery_load_failed" });
+  });
+
+  it("does not send an already-sent retry delivery", async () => {
+    const { dependencies, send } = testDependencies({
+      loadDelivery: vi.fn(async () => ({
+        status: "found" as const,
+        delivery: retryDelivery({ state: "sent" }),
+      })),
+    });
+    const response = await handleRegistrationEmail(
+      authorizedRequest({ type: "RETRY", delivery_id: "delivery-1" }),
+      dependencies,
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({
+      success: true,
+      sent: 0,
+      already_sent: 1,
+    });
+  });
+
+  it("reports an active claim as in progress", async () => {
+    const record = canonicalDelivery();
+    record.registration.promoted_at = null;
+    const { dependencies, send } = testDependencies({
+      loadCanonicalDelivery: vi.fn(async () => found(record)),
+      loadDelivery: vi.fn(async () => ({
+        status: "found" as const,
+        delivery: retryDelivery({ state: "pending" }),
+      })),
+      deliver: vi.fn(async () => "in_progress" as const),
+    });
+    const response = await handleRegistrationEmail(
+      authorizedRequest({ type: "RETRY", delivery_id: "delivery-1" }),
+      dependencies,
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({ in_progress: 1, sent: 0 });
+  });
+
+  it.each([
+    [{ type: "RETRY" }],
+    [{ type: "RETRY", delivery_id: "" }],
+    [{ type: "RETRY", delivery_id: 7 }],
+  ])("rejects malformed retry request %j", async (body) => {
+    const loadDelivery = vi.fn();
+    const { dependencies } = testDependencies({ loadDelivery });
+    const response = await handleRegistrationEmail(
+      authorizedRequest(body),
+      dependencies,
+    );
+
+    expect(response.status).toBe(400);
+    expect(loadDelivery).not.toHaveBeenCalled();
+  });
+
+  it("retries cancellation without generating another cancellation token", async () => {
+    const record = canonicalDelivery();
+    record.registration.status = "cancelled";
+    const generateCancelToken = vi.fn(async () => "unused");
+    const { dependencies, send } = testDependencies({
+      generateCancelToken,
+      loadCanonicalDelivery: vi.fn(async () => found(record)),
+      loadDelivery: vi.fn(async () => ({
+        status: "found" as const,
+        delivery: retryDelivery({
+          delivery_key:
+            "registration_cancellation:registration-1:2026-08-07T12:00:00Z",
+          kind: "registration_cancellation",
+        }),
+      })),
+    });
+    const response = await handleRegistrationEmail(
+      authorizedRequest({ type: "RETRY", delivery_id: "delivery-1" }),
+      dependencies,
+    );
+
+    expect(await response.json()).toMatchObject({ sent: 1 });
+    expect(generateCancelToken).not.toHaveBeenCalled();
+    expect(send.mock.calls[0][0].subject).toContain("Registration Cancelled");
+  });
+
   it("rejects non-POST requests before querying canonical records", async () => {
     const loadCanonicalDelivery = vi.fn();
     const { dependencies } = testDependencies({ loadCanonicalDelivery });

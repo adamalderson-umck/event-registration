@@ -16,15 +16,37 @@ import {
   type DeliveryResult,
   SanitizedDeliveryError,
 } from "../_shared/email-delivery.ts";
+import {
+  isRegistrationLifecycleKind,
+  matchesApplicableRegistrationLifecycleDelivery,
+} from "../_shared/registration-email-lifecycle.ts";
 import type { SmtpConfig } from "../_shared/org-smtp.ts";
 import { getValidatedTithelyGivingUrl } from "../_shared/tithely.ts";
 
-export interface RegistrationEmailRequest {
-  type: "INSERT" | "UPDATE";
+export type RegistrationEmailRequest =
+  | { type: "INSERT"; registration_id: string }
+  | {
+    type: "UPDATE";
+    registration_id: string;
+    old_status: string;
+    new_status: string;
+  }
+  | { type: "RETRY"; delivery_id: string };
+
+export interface RegistrationEmailDeliveryRecord {
+  id: string;
+  delivery_key: string;
   registration_id: string;
-  old_status?: string;
-  new_status?: string;
+  kind: DeliveryKind;
+  state: "pending" | "sent" | "failed";
+  attempt_count: number;
+  attempted_at: string;
 }
+
+export type RegistrationEmailDeliveryLoadResult =
+  | { status: "found"; delivery: RegistrationEmailDeliveryRecord }
+  | { status: "missing" }
+  | { status: "error" };
 
 interface CanonicalRegistration {
   id: string;
@@ -90,6 +112,9 @@ export interface RegistrationEmailDependencies {
   loadCanonicalDelivery(
     registrationId: string,
   ): Promise<CanonicalRegistrationLoadResult>;
+  loadDelivery(
+    deliveryId: string,
+  ): Promise<RegistrationEmailDeliveryLoadResult>;
   generateCancelToken(record: CanonicalRegistrationDelivery): Promise<string>;
   loadSmtpPassword(orgId: string): Promise<string>;
   deliver(
@@ -138,6 +163,12 @@ const jsonResponse = (body: unknown, status = 200) =>
 function parseRequestBody(value: unknown): RegistrationEmailRequest | null {
   if (!value || typeof value !== "object") return null;
   const body = value as Record<string, unknown>;
+  if (body.type === "RETRY") {
+    if (typeof body.delivery_id !== "string" || !body.delivery_id.trim()) {
+      return null;
+    }
+    return { type: "RETRY", delivery_id: body.delivery_id };
+  }
   if (body.type !== "INSERT" && body.type !== "UPDATE") return null;
   if (
     typeof body.registration_id !== "string" || !body.registration_id.trim()
@@ -324,7 +355,7 @@ function organizerEmail(
 }
 
 function buildLogicalDeliveries(
-  request: RegistrationEmailRequest,
+  request: Exclude<RegistrationEmailRequest, { type: "RETRY" }>,
   record: CanonicalRegistrationDelivery,
   dependencies: RegistrationEmailDependencies,
 ): { deliveries: LogicalDelivery[]; skipped?: number; code?: string } {
@@ -428,6 +459,28 @@ function buildLogicalDeliveries(
   return { deliveries, skipped, code: "unsupported_transition" };
 }
 
+function requestForLifecycleRetry(
+  delivery: RegistrationEmailDeliveryRecord,
+): Exclude<RegistrationEmailRequest, { type: "RETRY" }> {
+  if (delivery.kind === "waitlist_promotion") {
+    return {
+      type: "UPDATE",
+      registration_id: delivery.registration_id,
+      old_status: "waitlisted",
+      new_status: "confirmed",
+    };
+  }
+  if (delivery.kind === "registration_cancellation") {
+    return {
+      type: "UPDATE",
+      registration_id: delivery.registration_id,
+      old_status: "confirmed",
+      new_status: "cancelled",
+    };
+  }
+  return { type: "INSERT", registration_id: delivery.registration_id };
+}
+
 export async function handleRegistrationEmail(
   request: Request,
   dependencies: RegistrationEmailDependencies,
@@ -447,8 +500,41 @@ export async function handleRegistrationEmail(
   }
   if (!parsed) return jsonResponse({ error: "invalid_request" }, 400);
 
+  let retryDelivery: RegistrationEmailDeliveryRecord | null = null;
+  let deliveryRequest: Exclude<RegistrationEmailRequest, { type: "RETRY" }>;
+  let registrationId: string;
+
+  if (parsed.type === "RETRY") {
+    const deliveryLoad = await dependencies.loadDelivery(parsed.delivery_id);
+    if (deliveryLoad.status === "error") {
+      return jsonResponse({ error: "delivery_load_failed" }, 500);
+    }
+    if (deliveryLoad.status === "missing") {
+      return jsonResponse({ skipped: true, code: "delivery_missing" });
+    }
+    retryDelivery = deliveryLoad.delivery;
+    if (!isRegistrationLifecycleKind(retryDelivery.kind)) {
+      return jsonResponse({ skipped: true, code: "not_retryable" });
+    }
+    if (retryDelivery.state === "sent") {
+      return jsonResponse({
+        success: true,
+        sent: 0,
+        already_sent: 1,
+        in_progress: 0,
+        failed: 0,
+        skipped: 0,
+      });
+    }
+    registrationId = retryDelivery.registration_id;
+    deliveryRequest = requestForLifecycleRetry(retryDelivery);
+  } else {
+    registrationId = parsed.registration_id;
+    deliveryRequest = parsed;
+  }
+
   const loaded = await dependencies.loadCanonicalDelivery(
-    parsed.registration_id,
+    registrationId,
   );
   if (loaded.status === "error") {
     return jsonResponse({ error: "canonical_load_failed" }, 500);
@@ -458,7 +544,7 @@ export async function handleRegistrationEmail(
   }
   const record = loaded.record;
   if (
-    record.registration.id !== parsed.registration_id ||
+    record.registration.id !== registrationId ||
     record.registration.event_id !== record.event.id ||
     record.registration.org_id !== record.organization.id ||
     record.event.org_id !== record.organization.id
@@ -466,8 +552,32 @@ export async function handleRegistrationEmail(
     return jsonResponse({ skipped: true, code: "canonical_record_mismatch" });
   }
 
-  const logical = buildLogicalDeliveries(parsed, record, dependencies);
+  if (
+    retryDelivery &&
+    !matchesApplicableRegistrationLifecycleDelivery({
+      registration: record.registration,
+      delivery: retryDelivery,
+    })
+  ) {
+    return jsonResponse({ skipped: true, code: "not_applicable" });
+  }
+
+  const logical = buildLogicalDeliveries(deliveryRequest, record, dependencies);
   if (logical.code) return jsonResponse({ skipped: true, code: logical.code });
+  if (retryDelivery) {
+    logical.deliveries = logical.deliveries.filter((delivery) =>
+      delivery.kind === retryDelivery?.kind &&
+      registrationDeliveryKey(
+          delivery.kind,
+          record.registration.id,
+          delivery.occurrence,
+        ) === retryDelivery?.delivery_key
+    );
+    logical.skipped = 0;
+    if (logical.deliveries.length !== 1) {
+      return jsonResponse({ skipped: true, code: "not_applicable" });
+    }
+  }
 
   const counts = {
     sent: 0,
