@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PARKING_FIELD_IDS } from '../../config/eventPresets';
 
@@ -10,12 +10,16 @@ const {
     updateRegistrationAnswersMock,
     printParkingPassMock,
     setParkingPassFinalizationMock,
+    listRegistrationEmailDeliveryStatusesMock,
+    retryRegistrationEmailDeliveryMock,
 } = vi.hoisted(() => ({
     downloadCsvMock: vi.fn(),
     downloadPaymentLedgerCsvMock: vi.fn(),
     updateRegistrationAnswersMock: vi.fn(),
     printParkingPassMock: vi.fn(),
     setParkingPassFinalizationMock: vi.fn(),
+    listRegistrationEmailDeliveryStatusesMock: vi.fn(),
+    retryRegistrationEmailDeliveryMock: vi.fn(),
 }));
 
 vi.mock('../../utils/exportCsv', () => ({
@@ -33,6 +37,11 @@ vi.mock('../../utils/parkingPass', () => ({
 
 vi.mock('../../services/parkingPassFinalization', () => ({
     setParkingPassFinalization: setParkingPassFinalizationMock,
+}));
+
+vi.mock('../../services/registrationEmailDelivery', () => ({
+    listRegistrationEmailDeliveryStatuses: listRegistrationEmailDeliveryStatusesMock,
+    retryRegistrationEmailDelivery: retryRegistrationEmailDeliveryMock,
 }));
 
 vi.mock('../RegistrationEditHistory', () => ({
@@ -73,6 +82,11 @@ import RegistrationViewer from '../RegistrationViewer';
 import { supabase } from '../../services/supabase';
 
 describe('RegistrationViewer', () => {
+    const chooseStandardAction = async (user, label) => {
+        await user.click(await screen.findByRole('button', { name: 'Actions' }));
+        await user.click(screen.getByRole('menuitem', { name: label }));
+    };
+
     const event = {
         title: 'Beta Event',
         form_fields: [{ id: 'name', label: 'Name', type: 'text' }],
@@ -122,6 +136,47 @@ describe('RegistrationViewer', () => {
         },
         signature_records: [],
     };
+    const failedEmailStatus = (overrides = {}) => ({
+        registration_id: 'registration-1',
+        delivery_id: 'delivery-1',
+        kind: 'registration_confirmation',
+        state: 'failed',
+        attempt_count: 4,
+        last_error_code: 'smtp_send_failed',
+        attempted_at: '2026-08-26T12:00:00Z',
+        sent_at: null,
+        next_retry_at: null,
+        exhausted: true,
+        ...overrides,
+    });
+
+    const renderFailedEmailDetail = async () => {
+        supabase._mocks.mockOrder.mockResolvedValue({
+            data: [{
+                id: 'registration-1',
+                status: 'confirmed',
+                payment_status: 'not_required',
+                payment_recorded_total: 0,
+                registration_payments: [],
+                form_data: { name: 'Alex' },
+                signature_records: [],
+            }],
+            error: null,
+        });
+        render(<RegistrationViewer
+            orgId="org-1"
+            eventId="event-1"
+            event={event}
+            onBack={vi.fn()}
+        />);
+        await act(async () => {
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Retry failed email' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Retry email now' }));
+    };
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -143,6 +198,10 @@ describe('RegistrationViewer', () => {
         updateRegistrationAnswersMock.mockReset();
         printParkingPassMock.mockReset();
         setParkingPassFinalizationMock.mockReset();
+        listRegistrationEmailDeliveryStatusesMock.mockReset();
+        listRegistrationEmailDeliveryStatusesMock.mockResolvedValue(new Map());
+        retryRegistrationEmailDeliveryMock.mockReset();
+        retryRegistrationEmailDeliveryMock.mockResolvedValue({ ok: true, code: 'queued' });
     });
 
     it('renders Waiver and Media before Status, with Payment before Actions', async () => {
@@ -166,7 +225,169 @@ describe('RegistrationViewer', () => {
         const cells = within(rows[1])
             .getAllByRole('cell')
             .map((cell) => cell.textContent.trim());
-        expect(cells).toEqual(['Alex', 'Signed', 'Declined', 'confirmed', 'Not required', 'View']);
+        expect(cells).toEqual(['Alex', 'Signed', 'Declined', 'confirmed', 'Not required', 'Actions']);
+    });
+
+    it('discovers exhausted delivery failures and opens the focused detail section', async () => {
+        const user = userEvent.setup();
+        const failed = {
+            id: 'registration-1',
+            status: 'confirmed',
+            payment_status: 'not_required',
+            payment_recorded_total: 0,
+            registration_payments: [],
+            form_data: { name: 'Alex' },
+            signature_records: [],
+        };
+        const healthy = { ...failed, id: 'registration-2', form_data: { name: 'Morgan' } };
+        const failedStatus = {
+            registration_id: failed.id,
+            delivery_id: 'delivery-1',
+            kind: 'registration_confirmation',
+            state: 'failed',
+            attempt_count: 4,
+            last_error_code: 'smtp_send_failed',
+            attempted_at: '2026-08-26T12:00:00Z',
+            sent_at: null,
+            next_retry_at: null,
+            exhausted: true,
+        };
+        supabase._mocks.mockOrder.mockResolvedValue({ data: [failed, healthy], error: null });
+        listRegistrationEmailDeliveryStatusesMock.mockResolvedValue(new Map([
+            [failed.id, failedStatus],
+            [healthy.id, { registration_id: healthy.id, delivery_id: null, exhausted: false }],
+        ]));
+
+        render(<RegistrationViewer
+            orgId="org-1"
+            eventId="event-1"
+            event={event}
+            onBack={vi.fn()}
+        />);
+
+        expect(await screen.findByText('1 email delivery requires attention')).toBeInTheDocument();
+        expect(screen.getAllByText('Email failed')).toHaveLength(1);
+
+        await user.click(screen.getByRole('checkbox', { name: 'Email intervention' }));
+        expect(screen.getByText('Alex')).toBeInTheDocument();
+        expect(screen.queryByText('Morgan')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('checkbox', { name: 'Email intervention' }));
+
+        const failedRow = screen.getByText('Alex').closest('tr');
+        await user.click(within(failedRow).getByRole('button', { name: 'Actions' }));
+        await user.click(screen.getByRole('menuitem', { name: 'Retry failed email' }));
+
+        const heading = await screen.findByRole('heading', { name: 'Email Delivery' });
+        const card = heading.closest('[tabindex="-1"]');
+        await waitFor(() => expect(card).toHaveFocus());
+        expect(screen.getByText('Failed - intervention required')).toBeInTheDocument();
+    });
+
+    it('queues the exact delivery and waits for a newer authoritative sent result', async () => {
+        vi.useFakeTimers();
+        try {
+            const original = failedEmailStatus();
+            const sent = failedEmailStatus({
+                state: 'sent',
+                attempt_count: 5,
+                sent_at: '2026-08-26T12:30:00Z',
+                last_error_code: null,
+                exhausted: false,
+            });
+            listRegistrationEmailDeliveryStatusesMock
+                .mockResolvedValueOnce(new Map([['registration-1', original]]))
+                .mockResolvedValueOnce(new Map([['registration-1', original]]))
+                .mockResolvedValueOnce(new Map([['registration-1', sent]]));
+
+            await renderFailedEmailDetail();
+            fireEvent.click(screen.getByRole('button', { name: 'Confirm retry' }));
+            await act(async () => { await Promise.resolve(); });
+
+            expect(retryRegistrationEmailDeliveryMock).toHaveBeenCalledWith({
+                orgId: 'org-1',
+                registrationId: 'registration-1',
+                deliveryId: 'delivery-1',
+            });
+            expect(screen.getByRole('button', { name: 'Sending' })).toBeDisabled();
+            expect(screen.queryByText('queued')).not.toBeInTheDocument();
+            expect(listRegistrationEmailDeliveryStatusesMock).toHaveBeenCalledTimes(2);
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(2_000);
+            });
+            expect(screen.getByText('Sent')).toBeInTheDocument();
+            expect(listRegistrationEmailDeliveryStatusesMock).toHaveBeenCalledTimes(3);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('stops only when a newer failed attempt is authoritative', async () => {
+        vi.useFakeTimers();
+        try {
+            const original = failedEmailStatus();
+            const newlyFailed = failedEmailStatus({ attempt_count: 5 });
+            listRegistrationEmailDeliveryStatusesMock
+                .mockResolvedValueOnce(new Map([['registration-1', original]]))
+                .mockResolvedValueOnce(new Map([['registration-1', original]]))
+                .mockResolvedValueOnce(new Map([['registration-1', newlyFailed]]));
+
+            await renderFailedEmailDetail();
+            fireEvent.click(screen.getByRole('button', { name: 'Confirm retry' }));
+            await act(async () => { await Promise.resolve(); });
+            expect(listRegistrationEmailDeliveryStatusesMock).toHaveBeenCalledTimes(2);
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(2_000);
+            });
+            expect(listRegistrationEmailDeliveryStatusesMock).toHaveBeenCalledTimes(3);
+            expect(screen.getByText('Failed - intervention required')).toBeInTheDocument();
+            expect(screen.getByText(
+                'The outgoing mail server did not complete the delivery.',
+            )).toBeInTheDocument();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('bounds polling at 30 seconds without inferring another failure', async () => {
+        vi.useFakeTimers();
+        try {
+            const original = failedEmailStatus();
+            listRegistrationEmailDeliveryStatusesMock.mockResolvedValue(
+                new Map([['registration-1', original]]),
+            );
+
+            await renderFailedEmailDetail();
+            fireEvent.click(screen.getByRole('button', { name: 'Confirm retry' }));
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(30_000);
+            });
+
+            expect(listRegistrationEmailDeliveryStatusesMock).toHaveBeenCalledTimes(16);
+            expect(screen.getByRole('alert')).toHaveTextContent(
+                'The retry is still processing. Refresh delivery status shortly.',
+            );
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('maps retry rejection to safe administrator guidance', async () => {
+        listRegistrationEmailDeliveryStatusesMock.mockResolvedValue(
+            new Map([['registration-1', failedEmailStatus()]]),
+        );
+        retryRegistrationEmailDeliveryMock.mockRejectedValue(
+            Object.assign(new Error('private detail'), { code: 'configuration_unavailable' }),
+        );
+
+        await renderFailedEmailDetail();
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm retry' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'Email automation is unavailable. Check the event email configuration.',
+        );
+        expect(screen.queryByText('private detail')).not.toBeInTheDocument();
     });
 
     it('filters registrations by form answers without crashing', async () => {
@@ -248,7 +469,7 @@ describe('RegistrationViewer', () => {
 
         render(<RegistrationViewer orgId="org-1" eventId="event-1" event={{ ...event, payment_enabled: true }} onBack={vi.fn()} />);
 
-        await user.click(await screen.findByRole('button', { name: 'Record Payment' }));
+        await chooseStandardAction(user, 'Record Payment');
         const dialog = await screen.findByRole('dialog', { name: 'Record payment' });
         await user.selectOptions(within(dialog).getByLabelText('Payment method'), 'check');
         await user.type(within(dialog).getByLabelText(/^Amount/), '25');
@@ -291,7 +512,7 @@ describe('RegistrationViewer', () => {
 
         render(<RegistrationViewer orgId="org-1" eventId="event-1" event={{ ...event, payment_enabled: true }} onBack={vi.fn()} />);
 
-        await user.click(await screen.findByRole('button', { name: 'Record Payment' }));
+        await chooseStandardAction(user, 'Record Payment');
         const dialog = await screen.findByRole('dialog', { name: 'Record payment' });
         await user.selectOptions(within(dialog).getByLabelText('Payment method'), 'tithely');
         await user.type(within(dialog).getByLabelText(/^Amount/), '25');
@@ -323,7 +544,8 @@ describe('RegistrationViewer', () => {
 
         render(<RegistrationViewer orgId="org-1" eventId="event-1" event={{ ...event, payment_enabled: true }} onBack={vi.fn()} />);
 
-        expect(await screen.findByRole('button', { name: 'Record Payment' })).toBeInTheDocument();
+        await userEvent.click(await screen.findByRole('button', { name: 'Actions' }));
+        expect(screen.getByRole('menuitem', { name: 'Record Payment' })).toBeInTheDocument();
         expect(screen.getByText('Paid — $75.00 recorded')).toBeInTheDocument();
     });
 
@@ -346,7 +568,8 @@ describe('RegistrationViewer', () => {
         render(<RegistrationViewer orgId="org-1" eventId="event-1" event={{ ...event, payment_enabled: true }} onBack={vi.fn()} />);
 
         await screen.findByText('Alex');
-        expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: 'Actions' }));
+        expect(screen.queryByRole('menuitem', { name: 'Record Payment' })).not.toBeInTheDocument();
     });
 
     it('voids a payment and replaces the registration projection from the RPC result', async () => {
@@ -389,7 +612,7 @@ describe('RegistrationViewer', () => {
 
         render(<RegistrationViewer orgId="org-1" eventId="event-1" event={{ ...event, payment_enabled: true }} onBack={vi.fn()} />);
 
-        await user.click(await screen.findByRole('button', { name: /view/i }));
+        await chooseStandardAction(user, 'View');
         await user.click(screen.getByRole('button', { name: 'Void Payment' }));
         await user.type(screen.getByLabelText(/^Void reason/), 'Entered twice');
         await user.click(screen.getByRole('button', { name: 'Confirm Void' }));
@@ -697,7 +920,7 @@ describe('RegistrationViewer', () => {
                 event={event}
                 onBack={vi.fn()}
             />);
-            await user.click(await screen.findByRole('button', { name: /view/i }));
+            await chooseStandardAction(user, 'View');
             expect(screen.getByRole('button', { name: 'Edit Answers' })).toBeInTheDocument();
         },
     );
@@ -722,7 +945,7 @@ describe('RegistrationViewer', () => {
             event={event}
             onBack={vi.fn()}
         />);
-        await user.click(await screen.findByRole('button', { name: /view/i }));
+        await chooseStandardAction(user, 'View');
         expect(screen.queryByRole('button', { name: 'Edit Answers' })).not.toBeInTheDocument();
     });
 
@@ -791,7 +1014,7 @@ describe('RegistrationViewer', () => {
             event={event}
             onBack={vi.fn()}
         />);
-        await user.click(await screen.findByRole('button', { name: /view/i }));
+        await chooseStandardAction(user, 'View');
         await user.click(screen.getByRole('button', { name: 'Edit Answers' }));
         const name = screen.getByLabelText('Name');
         await user.clear(name);
@@ -812,7 +1035,7 @@ describe('RegistrationViewer', () => {
             event={event}
             onBack={vi.fn()}
         />);
-        await user.click(await screen.findByRole('button', { name: /view/i }));
+        await chooseStandardAction(user, 'View');
         await user.click(screen.getByRole('button', { name: 'Edit Answers' }));
         await user.click(screen.getByRole('button', { name: 'Cancel Editing' }));
         expect(confirmSpy).not.toHaveBeenCalled();
@@ -835,7 +1058,7 @@ describe('RegistrationViewer', () => {
             event={event}
             onBack={vi.fn()}
         />);
-        await user.click(await screen.findByRole('button', { name: /view/i }));
+        await chooseStandardAction(user, 'View');
         await user.click(screen.getByRole('button', { name: 'Edit Answers' }));
 
         const cleanEvent = new Event('beforeunload', { cancelable: true });

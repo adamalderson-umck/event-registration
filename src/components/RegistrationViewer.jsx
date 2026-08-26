@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import {
     ArrowLeft, Search, Printer, FileText, ClipboardList,
-    BarChart3, Users, Loader2, X, Eye, Download, XCircle, Upload, Pencil
+    BarChart3, Users, Loader2, X, Download, XCircle, Upload, Pencil
 } from 'lucide-react';
 import {
     printIndividualRegistration,
@@ -22,6 +22,8 @@ import RecordPaymentDialog from './RecordPaymentDialog';
 import PaymentHistory from './PaymentHistory';
 import RegistrationAnswerEditor from './RegistrationAnswerEditor';
 import RegistrationEditHistory from './RegistrationEditHistory';
+import RegistrationActionsMenu from './RegistrationActionsMenu';
+import RegistrationEmailDeliveryCard from './RegistrationEmailDeliveryCard';
 import { updateRegistrationAnswers } from '../services/registrationAnswerEdits';
 import { downloadCsv, downloadPaymentLedgerCsv } from '../utils/exportCsv';
 import { processCsvFile } from '../utils/importCsv';
@@ -29,6 +31,10 @@ import { getRegistrationWaiverStatuses } from '../utils/registrationWaiverStatus
 import { printParkingPass } from '../utils/parkingPass';
 import { getParkingPassStatus } from '../utils/parkingRegistration';
 import { setParkingPassFinalization } from '../services/parkingPassFinalization';
+import {
+    listRegistrationEmailDeliveryStatuses,
+    retryRegistrationEmailDelivery,
+} from '../services/registrationEmailDelivery';
 import {
     canRecordRegistrationPayment,
     formatRecordPaymentError,
@@ -48,6 +54,15 @@ const finalizationMessages = {
     forbidden: 'You no longer have access to manage this organization.',
     not_authenticated: 'Your session expired. Sign in and try again.',
     transition_failed: 'Unable to update this pass. Please try again.',
+};
+
+const emailRetryMessages = {
+    registration_not_found: 'This registration is no longer available.',
+    delivery_not_found: 'This email delivery record is no longer available.',
+    not_applicable: 'This email no longer matches the registration lifecycle.',
+    not_exhausted: 'This email is not eligible for manual retry.',
+    configuration_unavailable: 'Email automation is unavailable. Check the event email configuration.',
+    email_retry_failed: 'Unable to retry this email. Please try again.',
 };
 
 export default function RegistrationViewer({ orgId, eventId, event, organizationName, onBack }) {
@@ -71,6 +86,33 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
     const [savingFinalization, setSavingFinalization] = useState(false);
     const [finalizationError, setFinalizationError] = useState('');
     const [parkingHistoryRefreshKey, setParkingHistoryRefreshKey] = useState(0);
+    const [emailDeliveryStatuses, setEmailDeliveryStatuses] = useState(() => new Map());
+    const [emailStatusError, setEmailStatusError] = useState('');
+    const [emailInterventionOnly, setEmailInterventionOnly] = useState(false);
+    const [retryingDeliveryId, setRetryingDeliveryId] = useState(null);
+    const [emailRetryError, setEmailRetryError] = useState('');
+    const [focusEmailDelivery, setFocusEmailDelivery] = useState(false);
+    const emailStatusRefreshGeneration = useRef(0);
+    const emailDeliveryCardRef = useRef(null);
+    const retryPollTimers = useRef(new Set());
+
+    const refreshEmailDeliveryStatuses = useCallback(async () => {
+        const generation = emailStatusRefreshGeneration.current + 1;
+        emailStatusRefreshGeneration.current = generation;
+        try {
+            const statuses = await listRegistrationEmailDeliveryStatuses(orgId, eventId);
+            if (emailStatusRefreshGeneration.current === generation) {
+                setEmailDeliveryStatuses(statuses);
+                setEmailStatusError('');
+            }
+            return statuses;
+        } catch {
+            if (emailStatusRefreshGeneration.current === generation) {
+                setEmailStatusError('Unable to load email delivery status.');
+            }
+            return null;
+        }
+    }, [orgId, eventId]);
 
     // Import states
     const fileInputRef = useRef(null);
@@ -112,11 +154,33 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                 filter: `event_id=eq.${eventId}`
             }, () => {
                 fetchRegistrations();
+                refreshEmailDeliveryStatuses();
             })
             .subscribe();
 
         return () => supabase.removeChannel(channel);
-    }, [orgId, eventId]);
+    }, [orgId, eventId, refreshEmailDeliveryStatuses]);
+
+    useEffect(() => {
+        if (!orgId || !eventId) return undefined;
+        refreshEmailDeliveryStatuses();
+        const intervalId = window.setInterval(refreshEmailDeliveryStatuses, 60_000);
+        return () => {
+            window.clearInterval(intervalId);
+            emailStatusRefreshGeneration.current += 1;
+        };
+    }, [orgId, eventId, refreshEmailDeliveryStatuses]);
+
+    useEffect(() => {
+        if (!focusEmailDelivery || !selectedReg) return;
+        emailDeliveryCardRef.current?.focus();
+        setFocusEmailDelivery(false);
+    }, [focusEmailDelivery, selectedReg]);
+
+    useEffect(() => () => {
+        for (const timerId of retryPollTimers.current) window.clearTimeout(timerId);
+        retryPollTimers.current.clear();
+    }, []);
 
     useEffect(() => {
         if (!editingAnswers || !answerDraftDirty) return undefined;
@@ -352,6 +416,60 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
     };
 
     const formFields = useMemo(() => event?.form_fields || [], [event?.form_fields]);
+    const exhaustedRegistrationIds = useMemo(
+        () => new Set([...emailDeliveryStatuses.entries()]
+            .filter(([, status]) => status?.exhausted === true)
+            .map(([registrationId]) => registrationId)),
+        [emailDeliveryStatuses],
+    );
+
+    const openEmailDelivery = (registration) => {
+        setEmailRetryError('');
+        setSelectedReg(registration);
+        setFocusEmailDelivery(true);
+    };
+
+    const waitForRetryPoll = () => new Promise((resolve) => {
+        const timerId = window.setTimeout(() => {
+            retryPollTimers.current.delete(timerId);
+            resolve();
+        }, 2_000);
+        retryPollTimers.current.add(timerId);
+    });
+
+    const handleRetryEmailDelivery = async (deliveryId) => {
+        const registrationId = selectedReg.id;
+        const baselineAttemptCount =
+            emailDeliveryStatuses.get(registrationId)?.attempt_count ?? 0;
+        setRetryingDeliveryId(deliveryId);
+        setEmailRetryError('');
+        try {
+            await retryRegistrationEmailDelivery({
+                orgId,
+                registrationId,
+                deliveryId,
+            });
+            for (let read = 0; read < 15; read += 1) {
+                const statuses = await refreshEmailDeliveryStatuses();
+                const status = statuses?.get(registrationId);
+                if (status?.state === 'sent') return;
+                if (
+                    status?.state === 'failed'
+                    && status.attempt_count > baselineAttemptCount
+                ) return;
+                await waitForRetryPoll();
+            }
+            setEmailRetryError(
+                'The retry is still processing. Refresh delivery status shortly.',
+            );
+        } catch (error) {
+            setEmailRetryError(
+                emailRetryMessages[error.code] || emailRetryMessages.email_retry_failed,
+            );
+        } finally {
+            setRetryingDeliveryId(null);
+        }
+    };
 
     // Filtered registrations
     const filtered = useMemo(() => {
@@ -359,6 +477,11 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
 
         if (statusFilter !== 'all') {
             result = result.filter((r) => r.status === statusFilter);
+        }
+
+        if (emailInterventionOnly) {
+            result = result.filter((registration) =>
+                exhaustedRegistrationIds.has(registration.id));
         }
 
         if (searchTerm.trim()) {
@@ -375,7 +498,7 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
         }
 
         return result;
-    }, [registrations, statusFilter, searchTerm, formFields]);
+    }, [registrations, statusFilter, searchTerm, formFields, emailInterventionOnly, exhaustedRegistrationIds]);
 
     const statusColors = {
         confirmed: 'bg-green-50 text-green-700',
@@ -581,6 +704,15 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                     </div>}
                 </Card>
                 {!editingAnswers && (
+                    <RegistrationEmailDeliveryCard
+                        ref={emailDeliveryCardRef}
+                        status={emailDeliveryStatuses.get(selectedReg.id) || null}
+                        retrying={retryingDeliveryId === emailDeliveryStatuses.get(selectedReg.id)?.delivery_id}
+                        error={emailRetryError}
+                        onRetry={handleRetryEmailDelivery}
+                    />
+                )}
+                {!editingAnswers && (
                     <RegistrationEditHistory
                         registrationId={selectedReg.id}
                         orgId={orgId}
@@ -624,6 +756,16 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                 <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
                     <span>{cancelError}</span>
                     <button onClick={() => setCancelError('')} className="text-red-400 hover:text-red-600 shrink-0 cursor-pointer">âœ•</button>
+                </div>
+            )}
+            {emailStatusError && (
+                <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    {emailStatusError}
+                </div>
+            )}
+            {exhaustedRegistrationIds.size > 0 && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+                    {exhaustedRegistrationIds.size} email delivery{exhaustedRegistrationIds.size === 1 ? '' : 'ies'} require{exhaustedRegistrationIds.size === 1 ? 's' : ''} attention
                 </div>
             )}
             {/* Header */}
@@ -671,6 +813,16 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                     ]}
                     className="w-40"
                 />
+
+                <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input
+                        type="checkbox"
+                        checked={emailInterventionOnly}
+                        onChange={(event) => setEmailInterventionOnly(event.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                    />
+                    Email intervention
+                </label>
 
                 {/* Print Buttons */}
                 <div className="flex gap-2 ml-auto">
@@ -728,6 +880,8 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                     onPrintPass={handlePrintParkingPass}
                     onFinalize={(registration) => openFinalizationDialog(registration, 'finalize')}
                     onUndoFinalization={(registration) => openFinalizationDialog(registration, 'undo')}
+                    onRetryEmail={openEmailDelivery}
+                    emailDeliveryStatuses={emailDeliveryStatuses}
                     busyRegistrationId={savingFinalization
                         ? finalizationDialog?.registration.id
                         : null}
@@ -756,6 +910,12 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                                         reg,
                                         event?.waivers
                                     );
+                                    const deliveryStatus = emailDeliveryStatuses.get(reg.id);
+                                    const actionItems = [
+                                        { label: 'View', onSelect: () => setSelectedReg(reg) },
+                                        { label: 'Record Payment', enabled: canRecordRegistrationPayment(reg), onSelect: () => setPaymentDialogRegistration(reg) },
+                                        { label: 'Retry failed email', enabled: exhaustedRegistrationIds.has(reg.id), onSelect: () => openEmailDelivery(reg) },
+                                    ];
 
                                     return (
                                         <tr key={reg.id} className="hover:bg-slate-50 transition-colors">
@@ -774,28 +934,17 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                                                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColors[reg.status] || statusColors.pending}`}>
                                                     {reg.status || 'pending'}
                                                 </span>
+                                                {deliveryStatus?.exhausted === true && (
+                                                    <span className="ml-2 inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                                                        Email failed
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-slate-700">
                                                 {formatPaymentSummary(reg)}
                                             </td>
                                             <td className="px-4 py-3 text-right">
-                                                <div className="inline-flex items-center gap-3">
-                                                    <button
-                                                        onClick={() => setSelectedReg(reg)}
-                                                        className="text-primary hover:text-primary-dark text-sm font-medium inline-flex items-center gap-1 cursor-pointer"
-                                                    >
-                                                        <Eye className="w-3 h-3" /> View
-                                                    </button>
-                                                    {canRecordRegistrationPayment(reg) && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setPaymentDialogRegistration(reg)}
-                                                            className="text-primary hover:text-primary-dark text-sm font-medium cursor-pointer"
-                                                        >
-                                                            Record Payment
-                                                        </button>
-                                                    )}
-                                                </div>
+                                                <RegistrationActionsMenu items={actionItems} />
                                             </td>
                                         </tr>
                                     );
