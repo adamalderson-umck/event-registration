@@ -527,6 +527,8 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
 
     const handleBackToList = () => {
         if (editingAnswers && !closeAnswerEditor()) return;
+        setEmailRetryError('');
+        setFocusEmailDelivery(false);
         setSelectedReg(null);
     };
 

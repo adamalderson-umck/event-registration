@@ -390,6 +390,26 @@ describe('RegistrationViewer', () => {
         expect(screen.queryByText('private detail')).not.toBeInTheDocument();
     });
 
+    it('clears a retry error after returning to the registration list', async () => {
+        listRegistrationEmailDeliveryStatusesMock.mockResolvedValue(
+            new Map([['registration-1', failedEmailStatus()]]),
+        );
+        retryRegistrationEmailDeliveryMock.mockRejectedValue(
+            Object.assign(new Error('private detail'), { code: 'configuration_unavailable' }),
+        );
+
+        await renderFailedEmailDetail();
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm retry' }));
+        expect(await screen.findByRole('alert')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Back to List' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'View' }));
+
+        expect(await screen.findByRole('heading', { name: 'Email Delivery' })).toBeInTheDocument();
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
     it('filters registrations by form answers without crashing', async () => {
         const user = userEvent.setup();
         supabase._mocks.mockOrder.mockResolvedValue({
