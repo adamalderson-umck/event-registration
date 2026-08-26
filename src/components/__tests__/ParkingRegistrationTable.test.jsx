@@ -25,6 +25,38 @@ const registration = (overrides = {}) => ({
 });
 
 describe('ParkingRegistrationTable', () => {
+    it('shows and routes retry only for an exhausted delivery', async () => {
+        const user = userEvent.setup();
+        const failedRegistration = registration();
+        const healthyRegistration = registration({ id: 'parking-registration-2' });
+        const onRetryEmail = vi.fn();
+        render(
+            <ParkingRegistrationTable
+                registrations={[failedRegistration, healthyRegistration]}
+                onView={vi.fn()}
+                onRecordPayment={vi.fn()}
+                onPrintPass={vi.fn()}
+                onFinalize={vi.fn()}
+                onUndoFinalization={vi.fn()}
+                onRetryEmail={onRetryEmail}
+                emailDeliveryStatuses={new Map([
+                    [failedRegistration.id, { exhausted: true }],
+                    [healthyRegistration.id, { exhausted: false }],
+                ])}
+            />
+        );
+
+        expect(screen.getAllByText('Email failed')).toHaveLength(1);
+        const rows = screen.getAllByRole('row').slice(1);
+        await user.click(within(rows[0]).getByRole('button', { name: 'Actions' }));
+        await user.click(screen.getByRole('menuitem', { name: 'Retry failed email' }));
+        expect(onRetryEmail).toHaveBeenCalledWith(failedRegistration);
+
+        await user.click(within(rows[1]).getByRole('button', { name: 'Actions' }));
+        expect(screen.queryByRole('menuitem', { name: 'Retry failed email' }))
+            .not.toBeInTheDocument();
+    });
+
     it('renders the parking administration columns and prints valid passes', async () => {
         const user = userEvent.setup();
         const paidRegistration = registration();
