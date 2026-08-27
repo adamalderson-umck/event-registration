@@ -1,13 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-export default function RegistrationActionsMenu({ items, disabled = false }) {
+export default function ParkingRegistrationActionsMenu({
+    onView,
+    onRecordPayment,
+    onPrintPass,
+    onFinalize,
+    onUndoFinalization,
+    canRecordPayment,
+    canPrint,
+    canFinalize,
+    canUndo,
+    disabled = false,
+}) {
     const [open, setOpen] = useState(false);
     const [position, setPosition] = useState({ top: 0, left: 0 });
     const rootRef = useRef(null);
     const triggerRef = useRef(null);
     const itemRefs = useRef([]);
-    const enabledItems = items.filter((item) => item.enabled !== false);
+    const items = [
+        { label: 'View', enabled: true, run: onView },
+        { label: 'Record Payment', enabled: canRecordPayment, run: onRecordPayment },
+        { label: 'Print Pass', enabled: canPrint, run: onPrintPass },
+        { label: 'Finalize', enabled: canFinalize, run: onFinalize },
+        { label: 'Undo Finalization', enabled: canUndo, run: onUndoFinalization },
+    ].filter((item) => item.enabled);
 
     useEffect(() => {
         if (!open) return undefined;
@@ -37,16 +54,16 @@ export default function RegistrationActionsMenu({ items, disabled = false }) {
             triggerRef.current?.focus();
         } else if (event.key === 'ArrowDown') {
             event.preventDefault();
-            focusItem((current + 1 + enabledItems.length) % enabledItems.length);
+            focusItem((current + 1 + items.length) % items.length);
         } else if (event.key === 'ArrowUp') {
             event.preventDefault();
-            focusItem((current - 1 + enabledItems.length) % enabledItems.length);
+            focusItem((current - 1 + items.length) % items.length);
         } else if (event.key === 'Home') {
             event.preventDefault();
             focusItem(0);
         } else if (event.key === 'End') {
             event.preventDefault();
-            focusItem(enabledItems.length - 1);
+            focusItem(items.length - 1);
         }
     };
 
@@ -71,7 +88,7 @@ export default function RegistrationActionsMenu({ items, disabled = false }) {
                     style={position}
                     className="fixed z-50 min-w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
                 >
-                    {enabledItems.map((item, index) => (
+                    {items.map((item, index) => (
                         <button
                             key={item.label}
                             ref={(node) => { itemRefs.current[index] = node; }}
@@ -80,7 +97,7 @@ export default function RegistrationActionsMenu({ items, disabled = false }) {
                             tabIndex={index === 0 ? 0 : -1}
                             onClick={() => {
                                 setOpen(false);
-                                item.onSelect();
+                                item.run();
                             }}
                             className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
                         >

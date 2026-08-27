@@ -36,6 +36,10 @@ A dynamic, multi-tenant Event Registration System with secure forms, waiver sign
 
 ## Supabase Development
 
+Registration-email automatic retries from PR #37 have been retired. Before integrating or
+replaying this repository's database history, read the
+[email retry rollback and integration notes](docs/registration-email-retry-rollback.md).
+
 Docker or another Docker-compatible runtime is required for the local Supabase stack. Install dependencies, start the disposable local services, rebuild the database from the migration ledger without seed data, and inspect local history with:
 
 ```powershell
