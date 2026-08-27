@@ -9,8 +9,6 @@ import {
   type CanonicalRegistrationDelivery,
   type CanonicalRegistrationLoadResult,
   handleRegistrationEmail,
-  type RegistrationEmailDeliveryLoadResult,
-  type RegistrationEmailDeliveryRecord,
 } from "./handler.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
@@ -82,29 +80,11 @@ async function loadCanonicalDelivery(
   };
 }
 
-async function loadDelivery(
-  deliveryId: string,
-): Promise<RegistrationEmailDeliveryLoadResult> {
-  const { data, error } = await client.from("email_deliveries")
-    .select(
-      "id, delivery_key, registration_id, kind, state, attempt_count, attempted_at",
-    )
-    .eq("id", deliveryId)
-    .maybeSingle();
-  if (error) return { status: "error" };
-  if (!data) return { status: "missing" };
-  return {
-    status: "found",
-    delivery: data as RegistrationEmailDeliveryRecord,
-  };
-}
-
 Deno.serve((request: Request) =>
   handleRegistrationEmail(request, {
     automationSecret,
     baseUrl: Deno.env.get("BASE_URL") || "",
     loadCanonicalDelivery,
-    loadDelivery,
     generateCancelToken(record) {
       return generateCancelToken(
         record.organization.id,
