@@ -421,7 +421,8 @@ describe('RegistrationViewer', () => {
             [expect.objectContaining({ id: 'registration-1' })],
             event.form_fields,
             'Beta_Event.csv',
-            event.waivers
+            event.waivers,
+            event
         );
 
         fireEvent.click(screen.getByTitle('Export Payment Ledger'));

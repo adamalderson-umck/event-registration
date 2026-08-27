@@ -139,4 +139,48 @@ describe('buildCsvString', () => {
       '"Voided","2026-08-03T11:00:00Z","admin-2","Wrong registration"'
     );
   });
+
+  it.each([
+    [{ status: 'confirmed', payment_status: 'paid' }, 'Valid'],
+    [{ status: 'confirmed', payment_status: 'pending' }, 'Payment pending'],
+    [{ status: 'confirmed', payment_status: 'partial' }, 'Payment pending'],
+    [{ status: 'waitlisted' }, 'Waitlisted'],
+    [{ status: 'cancelled' }, 'Invalid'],
+    [{ status: 'pending' }, 'Invalid'],
+    [{ parking_pass_finalized_at: '2026-08-26T12:00:00Z' }, 'Finalized'],
+  ])('exports the parking pass status for %j', (registration, expected) => {
+    const csv = buildCsvString([registration], [], [], { event_type: 'parking' });
+    const [header, row] = csv.split('\n').map(line => line.split(',').map(cell => cell.slice(1, -1)));
+    expect(header).toContain('Pass Status');
+    expect(row[header.indexOf('Pass Status')]).toBe(expected);
+  });
+
+  it('preserves serialized answers and pass finalization details in both CSV reports', () => {
+    const registration = {
+      ...registrations[0],
+      form_data: JSON.stringify({ f1: 'Alex', f2: 'alex@example.org' }),
+      payment_method: 'in_person',
+      parking_pass_finalized_at: '2026-08-26T12:00:00Z',
+      parking_pass_finalized_by_name: 'Pat "Admin"',
+      registration_payments: [{ method: 'cash', amount: 50 }],
+    };
+    const event = { event_type: 'parking' };
+    for (const csv of [
+      buildCsvString([registration], fields, waivers, event),
+      buildPaymentLedgerCsv([registration], fields, event),
+    ]) {
+      expect(csv).toContain('"Alex","alex@example.org"');
+      expect(csv).toContain('"Pass Status","Pass Finalized At","Pass Finalized By"');
+      expect(csv).toContain('"Finalized","2026-08-26T12:00:00Z","Pat ""Admin"""');
+    }
+    const ledger = buildPaymentLedgerCsv([registration], fields, event);
+    expect(ledger).toContain('"Registration Status","Selected Payment Method"');
+    expect(ledger).toContain('"confirmed","in_person"');
+  });
+
+  it('does not add pass columns to non-parking exports, including empty exports', () => {
+    expect(buildCsvString([], fields, waivers, { event_type: 'general' })).not.toContain('Pass Status');
+    expect(buildPaymentLedgerCsv([], fields, {})).not.toContain('Pass Status');
+    expect(buildCsvString([], fields, waivers, { event_type: 'parking' })).toContain('Pass Status');
+  });
 });

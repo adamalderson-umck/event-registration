@@ -5,7 +5,9 @@
  */
 
 import { getRegistrationWaiverStatuses } from './registrationWaiverStatus';
-import { formatPaymentSummary } from './paymentStatus';
+import { formatCurrency, formatPaymentSummary } from './paymentStatus';
+import { getParkingPassStatus, PARKING_PASS_STATUS } from './parkingRegistration';
+import { getParkingReportColumns, getRegistrationFormData } from './registrationReportData';
 
 const printStyles = `
   <style>
@@ -40,7 +42,7 @@ const individualPrintStyles = `
     .meta-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
     .meta-item { border-left: 2px solid #cbd5e1; padding-left: 7px; break-inside: avoid; }
     .meta-label { color: #64748b; font-size: 8px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
-    .meta-value { color: #1e293b; font-size: 10px; font-weight: 600; margin-top: 1px; }
+    .meta-value { color: #1e293b; font-size: 10px; font-weight: 600; margin-top: 1px; overflow-wrap: anywhere; }
     .print-section { margin-top: 12px; }
     .section-title { border-bottom: 1px solid #cbd5e1; color: #334155; font-size: 11px; font-weight: 700; letter-spacing: 0.4px; margin: 0 0 5px; padding-bottom: 3px; text-transform: uppercase; break-after: avoid; }
     .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; row-gap: 0; }
@@ -55,6 +57,17 @@ const individualPrintStyles = `
     .payment-section table { margin-top: 5px; }
     .payment-section th, .payment-section td { font-size: 9px; padding: 5px 7px; }
     @media print { body.individual-registration { padding: 0; } }
+  </style>
+`;
+
+const tablePrintStyles = `
+  <style>
+    @page { size: letter landscape; margin: 0.4in; }
+    .registration-table table { table-layout: fixed; margin-bottom: 18px; }
+    .registration-table th, .registration-table td { overflow-wrap: anywhere; }
+    .registration-table .row-number { width: 30px; }
+    .registration-table tr { break-inside: avoid; }
+    .registration-table caption { text-align: left; font-size: 11px; margin-bottom: 4px; }
   </style>
 `;
 
@@ -150,16 +163,9 @@ function getIndividualPrintSections(event) {
     return sections;
 }
 
-function getRegistrationFormData(registration) {
-    if (!registration?.form_data) return {};
-    if (typeof registration.form_data === 'string') {
-        try {
-            return JSON.parse(registration.form_data);
-        } catch {
-            return {};
-        }
-    }
-    return registration.form_data;
+function formatParkingReportValue(column, registration) {
+    const value = column.value(registration);
+    return column.date && value ? new Date(value).toLocaleString() : formatValue(value);
 }
 
 function isWidePrintField(field, value) {
@@ -223,6 +229,15 @@ export function printIndividualRegistration(registration, event) {
     const submitted = registration.created_at
         ? new Date(registration.created_at).toLocaleString()
         : 'N/A';
+    const { waiverStatus, mediaDecision } = getRegistrationWaiverStatuses(registration, event.waivers);
+    const details = [
+        ['Registration ID', registration.id || 'N/A'],
+        ['Waiver', waiverStatus],
+        ['Media', mediaDecision],
+        ['Selected Payment Method', registration.payment_method || 'None'],
+        ['Expected Amount', registration.payment_expected_amount == null ? 'N/A' : formatCurrency(registration.payment_expected_amount)],
+        ...getParkingReportColumns(event).map(column => [column.label, formatParkingReportValue(column, registration)]),
+    ];
     const html = `<!DOCTYPE html><html><head><title>Registration - ${escapeHtml(event.title)}</title>${printStyles}${individualPrintStyles}</head><body class="individual-registration">
     <header class="print-header">
       <h1>${escapeHtml(event.title)}</h1>
@@ -231,6 +246,7 @@ export function printIndividualRegistration(registration, event) {
         <div class="meta-item"><div class="meta-label">Status</div><div class="meta-value">${escapeHtml(registration.status || 'pending')}</div></div>
         <div class="meta-item"><div class="meta-label">Payment</div><div class="meta-value">${escapeHtml(formatPaymentSummary(registration) || 'N/A')}</div></div>
         <div class="meta-item"><div class="meta-label">Submitted</div><div class="meta-value">${escapeHtml(submitted)}</div></div>
+        ${details.map(([label, value]) => `<div class="meta-item"><div class="meta-label">${escapeHtml(label)}</div><div class="meta-value">${escapeHtml(value)}</div></div>`).join('')}
       </div>
     </header>
     ${sections}
@@ -251,13 +267,16 @@ export function printIndividualRegistration(registration, event) {
  */
 export function printRegistrationTable(registrations, event) {
     const formFields = (event.form_fields || []).filter((f) => f.type !== 'sectionBreak');
-    const headers = formFields.map((f) => `<th>${f.label}</th>`).join('');
-    const derivedHeaders = '<th>Waiver</th><th>Media</th><th>Status</th><th>Payment</th><th>Submitted</th>';
+    const parkingColumns = getParkingReportColumns(event);
+    const headers = [
+        ...formFields.map(field => field.label),
+        'Waiver', 'Media', 'Status', 'Payment', 'Submitted',
+        ...parkingColumns.map(column => column.label),
+    ];
 
     const rows = registrations.map((reg) => {
-        const cells = formFields.map((f) =>
-            `<td>${formatValue(reg.form_data?.[f.id])}</td>`
-        ).join('');
+        const formData = getRegistrationFormData(reg);
+        const cells = formFields.map(field => formatValue(formData[field.id]));
         const { waiverStatus, mediaDecision } = getRegistrationWaiverStatuses(
             reg,
             event.waivers
@@ -265,16 +284,27 @@ export function printRegistrationTable(registrations, event) {
         const submitted = reg.created_at
             ? new Date(reg.created_at).toLocaleString()
             : 'N/A';
-        return `<tr>${cells}<td>${waiverStatus}</td><td>${mediaDecision}</td><td>${reg.status || 'pending'}</td><td>${escapeHtml(formatPaymentSummary(reg) || 'N/A')}</td><td>${submitted}</td></tr>`;
-    }).join('');
+        return [
+            ...cells, waiverStatus, mediaDecision, reg.status || 'pending',
+            formatPaymentSummary(reg) || 'N/A', submitted,
+            ...parkingColumns.map(column => formatParkingReportValue(column, reg)),
+        ];
+    });
+    const tables = [];
+    const columnsPerTable = 8;
+    for (let start = 0; start < headers.length; start += columnsPerTable) {
+        const end = start + columnsPerTable;
+        tables.push(`<table>
+      ${headers.length > columnsPerTable ? `<caption>Columns ${start + 1}-${Math.min(end, headers.length)} of ${headers.length}. Row numbers match across tables.</caption>` : ''}
+      <thead><tr><th class="row-number">#</th>${headers.slice(start, end).map(label => `<th>${escapeHtml(label)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map((row, index) => `<tr><td>${index + 1}</td>${row.slice(start, end).map(value => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>`);
+    }
 
-    const html = `<!DOCTYPE html><html><head><title>${event.title} - Registrations</title>${printStyles}</head><body>
-    <h1>${event.title}</h1>
+    const html = `<!DOCTYPE html><html><head><title>${escapeHtml(event.title)} - Registrations</title>${printStyles}${tablePrintStyles}</head><body class="registration-table">
+    <h1>${escapeHtml(event.title)}</h1>
     <h2>Registration Table &nbsp;·&nbsp; ${registrations.length} registrations</h2>
-    <table>
-      <thead><tr>${headers}${derivedHeaders}</tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
+    ${tables.join('')}
   </body></html>`;
 
     openPrintWindow(html);
@@ -291,30 +321,32 @@ export function printSignInSheet(registrations, event) {
     );
     const displayFields = nameFields.length > 0 ? nameFields : formFields.slice(0, 2);
 
-    const headers = displayFields.map((f) => `<th>${f.label}</th>`).join('');
+    const isParking = event.event_type === 'parking';
+    const headers = displayFields.map((f) => `<th>${escapeHtml(f.label)}</th>`).join('');
 
     const confirmedRegs = registrations.filter((r) => r.status !== 'cancelled');
 
     const rows = confirmedRegs.map((reg) => {
+        const formData = getRegistrationFormData(reg);
         const cells = displayFields.map((f) =>
-            `<td>${formatValue(reg.form_data?.[f.id])}</td>`
+            `<td>${escapeHtml(formatValue(formData[f.id]))}</td>`
         ).join('');
-        return `<tr>${cells}<td class="sign-in-row"></td></tr>`;
+        return `<tr>${cells}<td>${escapeHtml(reg.status || 'pending')}</td>${isParking ? `<td>${getParkingPassStatus(reg)}</td>` : ''}<td class="sign-in-row"></td></tr>`;
     }).join('');
 
     // Add a few blank rows for walk-ins
     const blankRows = Array(5).fill(0).map(() => {
         const cells = displayFields.map(() => '<td>&nbsp;</td>').join('');
-        return `<tr>${cells}<td></td></tr>`;
+        return `<tr>${cells}<td></td>${isParking ? '<td></td>' : ''}<td></td></tr>`;
     }).join('');
 
-    const html = `<!DOCTYPE html><html><head><title>${event.title} - Sign In Sheet</title>${printStyles}</head><body>
-    <h1>${event.title}</h1>
+    const html = `<!DOCTYPE html><html><head><title>${escapeHtml(event.title)} - Sign In Sheet</title>${printStyles}</head><body>
+    <h1>${escapeHtml(event.title)}</h1>
     <h2>Sign-In Sheet &nbsp;·&nbsp; ${event.start_date
             ? new Date(event.start_date).toLocaleDateString()
             : ''}</h2>
     <table>
-      <thead><tr>${headers}<th>Signature / Check-In</th></tr></thead>
+      <thead><tr>${headers}<th>Status</th>${isParking ? '<th>Pass Status</th>' : ''}<th>Signature / Check-In</th></tr></thead>
       <tbody>${rows}${blankRows}</tbody>
     </table>
   </body></html>`;
@@ -340,11 +372,32 @@ export function printEventSummary(registrations, event) {
         ).toFixed(2)
         : null;
 
-    const html = `<!DOCTYPE html><html><head><title>${event.title} - Summary</title>${printStyles}</head><body>
-    <h1>${event.title}</h1>
+    const passSummary = event.event_type === 'parking'
+        ? `<section><h2>Pass Status</h2><div class="summary-grid">${Object.values(PARKING_PASS_STATUS).map(status => (
+            `<div class="summary-box"><div class="label">${status}</div><div class="value">${registrations.filter(registration => getParkingPassStatus(registration) === status).length}</div></div>`
+        )).join('')}</div></section>`
+        : '';
+    const waiverStatuses = registrations.map(registration => getRegistrationWaiverStatuses(registration, event.waivers));
+    const waiverCounts = [];
+    if (event.waivers?.some(waiver => waiver.required !== false)) {
+        for (const status of ['Signed', 'Missing']) {
+            waiverCounts.push([`Waiver ${status}`, waiverStatuses.filter(value => value.waiverStatus === status).length]);
+        }
+    }
+    if (event.waivers?.some(waiver => waiver.required === false && waiver.title?.trim().toLowerCase() === 'media release')) {
+        for (const status of ['Approved', 'Declined', 'Missing']) {
+            waiverCounts.push([`Media ${status}`, waiverStatuses.filter(value => value.mediaDecision === status).length]);
+        }
+    }
+    const waiverSummary = waiverCounts.length
+        ? `<section><h2>Waiver / Media (all registrations)</h2><div class="summary-grid">${waiverCounts.map(([label, count]) => `<div class="summary-box"><div class="label">${label}</div><div class="value">${count}</div></div>`).join('')}</div></section>`
+        : '';
+
+    const html = `<!DOCTYPE html><html><head><title>${escapeHtml(event.title)} - Summary</title>${printStyles}</head><body>
+    <h1>${escapeHtml(event.title)}</h1>
     <h2>Event Summary</h2>
     <div class="meta">
-      ${event.location ? `Location: ${event.location} &nbsp;|&nbsp;` : ''}
+      ${event.location ? `Location: ${escapeHtml(event.location)} &nbsp;|&nbsp;` : ''}
       ${event.start_date ? `Date: ${new Date(event.start_date).toLocaleDateString()}` : ''}
       ${event.end_date && event.end_date !== event.start_date ? ` – ${new Date(event.end_date).toLocaleDateString()}` : ''}
     </div>
@@ -369,6 +422,8 @@ export function printEventSummary(registrations, event) {
       ${partialPayments > 0 ? `<div class="summary-box"><div class="label">Partially Paid</div><div class="value">${partialPayments}</div></div>` : ''}
       ${paymentTotal !== null ? `<div class="summary-box"><div class="label">Payment Collected</div><div class="value">$${paymentTotal}</div></div>` : ''}
     </div>
+    ${passSummary}
+    ${waiverSummary}
     <div class="meta" style="margin-top: 16px;">
       Total registrations: ${registrations.length} &nbsp;|&nbsp;
       ${paid > 0 ? `Paid: ${paid}` : ''}
