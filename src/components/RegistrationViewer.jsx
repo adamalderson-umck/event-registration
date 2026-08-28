@@ -688,7 +688,8 @@ export default function RegistrationViewer({ orgId, eventId, event, organization
                         filtered,
                         formFields,
                         `${event?.title?.replace(/\s+/g, '_') || 'registrations'}.csv`,
-                        event?.waivers
+                        event?.waivers,
+                        event
                     )} title="Export to CSV">
                         <Download className="w-4 h-4" /> CSV
                     </Button>

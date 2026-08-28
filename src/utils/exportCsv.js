@@ -1,5 +1,6 @@
 import { getRegistrationWaiverStatuses } from './registrationWaiverStatus';
 import { formatPaymentSummary } from './paymentStatus';
+import { getParkingReportColumns, getRegistrationFormData } from './registrationReportData';
 
 /**
  * Escapes a value for CSV (RFC 4180).
@@ -11,22 +12,25 @@ function escapeCsv(value) {
 
 /**
  * Builds a CSV string from registrations, form fields, and waiver definitions.
- * Appends Waiver, Media, Status, Payment, and Submitted columns.
+ * Appends waiver, media, registration/payment status, parking details, and submission time.
  */
-export function buildCsvString(registrations, formFields, waivers = []) {
+export function buildCsvString(registrations, formFields, waivers = [], event = {}) {
   const filteredFields = formFields.filter((f) => f.type !== 'sectionBreak');
+  const parkingColumns = getParkingReportColumns(event);
   const headers = [
     ...filteredFields.map((f) => f.label),
     'Waiver',
     'Media',
     'Status',
     'Payment',
+    ...parkingColumns.map(column => column.label),
     'Submitted',
   ];
 
   const rows = registrations.map((reg) => {
+    const formData = getRegistrationFormData(reg);
     const fieldValues = filteredFields.map((f) => {
-      const val = reg.form_data?.[f.id];
+      const val = formData[f.id];
       return Array.isArray(val) ? val.join(', ') : (val ?? '');
     });
     const { waiverStatus, mediaDecision } = getRegistrationWaiverStatuses(reg, waivers);
@@ -36,6 +40,7 @@ export function buildCsvString(registrations, formFields, waivers = []) {
       mediaDecision,
       reg.status || '',
       formatPaymentSummary(reg),
+      ...parkingColumns.map(column => column.value(reg)),
       reg.created_at ? new Date(reg.created_at).toLocaleString() : '',
     ];
   });
@@ -60,6 +65,7 @@ function downloadCsvText(csv, filename) {
 
 export function buildPaymentLedgerCsv(registrations, formFields, event) {
   const fields = formFields.filter((field) => field.type !== 'sectionBreak');
+  const parkingColumns = getParkingReportColumns(event);
   const headers = [
     'Event',
     ...fields.map((field) => field.label),
@@ -77,13 +83,16 @@ export function buildPaymentLedgerCsv(registrations, formFields, event) {
     'Voided At',
     'Voided By',
     'Void Reason',
+    'Registration Status',
+    'Selected Payment Method',
+    ...parkingColumns.map(column => column.label),
   ];
 
   const rows = registrations.flatMap((registration) => (
     (registration.registration_payments || []).map((payment) => [
       event?.title || '',
       ...fields.map((field) => {
-        const value = registration.form_data?.[field.id];
+        const value = getRegistrationFormData(registration)[field.id];
         return Array.isArray(value) ? value.join(', ') : (value ?? '');
       }),
       registration.id,
@@ -102,6 +111,9 @@ export function buildPaymentLedgerCsv(registrations, formFields, event) {
       payment.voided_at || '',
       payment.voided_by || '',
       payment.void_reason || '',
+      registration.status || '',
+      registration.payment_method || '',
+      ...parkingColumns.map(column => column.value(registration)),
     ])
   ));
 
@@ -113,8 +125,8 @@ export function buildPaymentLedgerCsv(registrations, formFields, event) {
 /**
  * Triggers a registration CSV file download in the browser.
  */
-export function downloadCsv(registrations, formFields, filename = 'registrations.csv', waivers = []) {
-  downloadCsvText(buildCsvString(registrations, formFields, waivers), filename);
+export function downloadCsv(registrations, formFields, filename = 'registrations.csv', waivers = [], event = {}) {
+  downloadCsvText(buildCsvString(registrations, formFields, waivers, event), filename);
 }
 
 export function downloadPaymentLedgerCsv(
